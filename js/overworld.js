@@ -265,7 +265,7 @@ const Scripts = {
   async sage() {
     if (!S.flags.starter) { await say('Sage Maren: There you are, ' + S.name + '. Today you become a tamer. Three young monsters are waiting on the table. Choose the one you would like as your partner.'); return; }
     const c = caughtCount();
-    await say('Sage Maren: Your Journal lists ' + c + ' of 151 monsters. ' + (c >= 151 ? 'Every single one. I never thought I would see it.' : c >= 100 ? 'Vessara has very few secrets left for you.' : c >= 40 ? 'A fine collection, and still growing.' : 'Vessara has plenty more to show you.'));
+    await say('Sage Maren: Your Journal lists ' + c + ' of 144 monsters. ' + (c >= 144 ? 'Every single one. I never thought I would see it.' : c >= 100 ? 'Vessara has very few secrets left for you.' : c >= 40 ? 'A fine collection, and still growing.' : 'Vessara has plenty more to show you.'));
   },
   async starter(n) {
     const d = DEX[n.mon];
@@ -312,7 +312,7 @@ const Scripts = {
       S.flags.champion = 1; healParty();
       await say('The hall falls silent. Then every lamp in it flares gold.');
       await say(S.name + ' is the new Crown of Vessara!');
-      await say('Journal: ' + caughtCount() + ' of 151 monsters recorded. Somewhere past the Whisperwood, the Origin Glade has opened.');
+      await say('Journal: ' + caughtCount() + ' of 144 monsters recorded. Somewhere past the Whisperwood, the Origin Glade has opened.');
       await fadeOut(600);
       const r = newGameSpawn(); S.respawn = r; World.enter(r.map, r.x, r.y, 'down'); saveGame();
       await fadeIn(600);

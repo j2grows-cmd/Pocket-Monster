@@ -1,6 +1,6 @@
 # Tamers of Vessara
 
-A monster-taming RPG that runs in the browser. 151 original monsters, an original region with eleven towns, eight wardens to beat and a crown to win. No build step, no dependencies, no image files: every sprite and tile is drawn by code.
+A monster-taming RPG that runs in the browser. 144 original monsters, an original region with eleven towns, eight wardens to beat and a crown to win. No build step, no dependencies, no image files: every sprite and tile is drawn by code.
 
 ![Title screen](docs/title.png)
 
@@ -37,7 +37,7 @@ The game saves to the browser's local storage. Use Save in the menu, or rest at 
 
 ## What is in it
 
-- **151 monsters** in 73 evolution families, across 12 types. Each has its own stats, learnset, catch rate, Journal entry and habitat.
+- **144 monsters** in 69 evolution families, across 12 types. In Journal order they fall into nine groups of 16, one per 4x4 sprite sheet, and no evolution family is split across two sheets. Each has its own stats, learnset, catch rate, Journal entry and habitat.
 - **Three starters**: Sprigkin (Flora), Kindleram (Ember) and Dewpup (Tide). Your rival takes the one that beats yours.
 - **Turn-based battles** with physical, focus and status moves, 126 moves in all, five conditions (burn, frostbite, poison, sleep, stun), stat stages, critical hits, priority, multi-hit, drain and recoil.
 - **Charms** for catching wild monsters, a six-monster team, and a Paddock for the rest.
@@ -87,7 +87,7 @@ index.html           page shell, header and touch pad
 css/style.css        page styling
 js/core.js           constants, random helpers, type chart
 js/data/moves.js     all moves and the per-type move ladders
-js/data/monsters.js  the 151 monsters and their learnsets
+js/data/monsters.js  the 144 monsters and their learnsets
 js/data/items.js     items and shop stock
 js/data/world.js     the region: cells, tamers, wardens, map generation, interiors
 js/ui.js             design system: palette, type, panels, bars, chips, icons
@@ -110,7 +110,7 @@ To add a monster, add a row to `FAMILIES` in `js/data/monsters.js` and put it in
 node tools/check.js
 ```
 
-This confirms there are exactly 151 uniquely named monsters, every learnset and tamer team refers to things that exist, every monster family can be obtained somewhere, every town, door, sign, item and tamer on the map can be reached on foot, and no road warden can be walked around.
+This confirms there are exactly 144 uniquely named monsters, every learnset and tamer team refers to things that exist, every monster family can be obtained somewhere, every town, door, sign, item and tamer on the map can be reached on foot, and no road warden can be walked around.
 
 ## Originality
 

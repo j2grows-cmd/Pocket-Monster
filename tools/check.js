@@ -10,7 +10,7 @@ const { DEX, MOVES, CELLS, MAPS, WORLD, WARDENS, COUNCIL, LODGE_TRAINERS, ITEMS,
 let bad = 0; const fail = (...a) => { bad++; console.log('FAIL', ...a); };
 
 // --- monsters ---
-if (DEX.length !== 152) fail('expected 151 monsters, got', DEX.length - 1);
+if (DEX.length !== 145) fail('expected 144 monsters, got', DEX.length - 1);
 const names = new Set();
 for (let i = 1; i < DEX.length; i++) {
   const d = DEX[i];

@@ -170,7 +170,7 @@ const HUD = {
     const $ = id => document.getElementById(id); if (!$('hud-loc')) return;
     $('hud-loc').textContent = loc;
     $('hud-who').hidden = !on;
-    if (on) { $('hud-name').textContent = S.name; $('hud-sig').textContent = sigilCount() + '/8'; $('hud-coins').textContent = S.coins; $('hud-jr').textContent = caughtCount() + '/151'; }
+    if (on) { $('hud-name').textContent = S.name; $('hud-sig').textContent = sigilCount() + '/8'; $('hud-coins').textContent = S.coins; $('hud-jr').textContent = caughtCount() + '/144'; }
   },
 };
 function frame(now) {

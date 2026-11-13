@@ -27,7 +27,7 @@ async function pauseMenu() {
     sigilRow(g, x + 58, y + 42, sigilCount());
     g.fillStyle = PAL.indigo3; g.fillRect(x + 10, y + 58, w - 20, 2);
     icon(g, 'coin', x + 10, y + 66, 1); text(g, String(S.coins), x + 21, y + 63, { size: 10, weight: 800, color: PAL.goldHi });
-    icon(g, 'journal', x + 62, y + 66, 1); text(g, caughtCount() + '/151', x + 73, y + 63, { size: 10, weight: 800, color: PAL.parch });
+    icon(g, 'journal', x + 62, y + 66, 1); text(g, caughtCount() + '/144', x + 73, y + 63, { size: 10, weight: 800, color: PAL.parch });
     icon(g, 'clock', x + 114, y + 66, 1); text(g, playTime(), x + 125, y + 63, { size: 10, weight: 800, color: PAL.parch });
     items.forEach(([label, ic], i) => {
       const ry = y + 84 + i * 25, on = i === st.sel;
@@ -270,11 +270,11 @@ function journalScreen() {
   return layer({
     draw(g) {
       screenFrame(g, 'Journal', [['B', 'Back']], g2 => {
-        text(g2, 'Seen ' + seenCount() + '   Caught ' + caughtCount() + ' / 151', VW - 12, 2, { size: 10, weight: 800, color: PAL.goldHi, align: 'right' });
-        bar(g2, VW - 132, 17, 120, 8, caughtCount() / 151, PAL.gold);
+        text(g2, 'Seen ' + seenCount() + '   Caught ' + caughtCount() + ' / 144', VW - 12, 2, { size: 10, weight: 800, color: PAL.goldHi, align: 'right' });
+        bar(g2, VW - 132, 17, 120, 8, caughtCount() / 144, PAL.gold);
       });
       panel(g, 8, 40, 196, 254, 'parch');
-      for (let i = top; i < Math.min(152, top + rows); i++) {
+      for (let i = top; i < Math.min(145, top + rows); i++) {
         const y = 50 + (i - top) * 22, d = DEX[i], seen = S.seen[i], got = S.caught[i];
         if (i === sel) selRow(g, 14, y - 2, 184, 20);
         text(g, String(i).padStart(3, '0'), 24, y + 1, { size: 10, weight: 800, color: PAL.soft });
@@ -300,7 +300,7 @@ function journalScreen() {
     key(k, done) {
       if (k === 'b') return done();
       if (k === 'up') sel--; else if (k === 'down') sel++; else if (k === 'left') sel -= 10; else if (k === 'right') sel += 10;
-      sel = sel < 1 ? (k === 'up' ? 151 : 1) : sel > 151 ? (k === 'down' ? 1 : 151) : sel;
+      sel = sel < 1 ? (k === 'up' ? 144 : 1) : sel > 144 ? (k === 'down' ? 1 : 144) : sel;
       if (sel < top) top = sel; if (sel >= top + rows) top = sel - rows + 1;
     },
   });
@@ -445,11 +445,11 @@ const Title = {
   parade: null,
   draw(g) {
     const t = Game.t;
-    if (!this.parade) { this.parade = []; for (let i = 0; i < 7; i++) this.parade.push({ id: R.int(1, 145), x: i * 90 - 60 }); }
+    if (!this.parade) { this.parade = []; for (let i = 0; i < 7; i++) this.parade.push({ id: R.int(1, 138), x: i * 90 - 60 }); }
     g.drawImage(Scenery.title(), 0, 0, VW, VH);
     for (let i = 0; i < 14; i++) { const x = (i * 173 + 40) % VW, y = (i * 59 + 12) % 118; if (Math.floor(t / 500 + i * 1.3) % 4 === 0) { g.fillStyle = PAL.white; g.fillRect(x & ~1, y & ~1, 2, 2); g.fillRect((x & ~1) - 2, y & ~1, 6, 2); g.fillRect(x & ~1, (y & ~1) - 2, 2, 6); } }
     for (const p of this.parade) {
-      p.x -= Game.dt * 0.022; if (p.x < -90) { p.x = VW + 20; p.id = R.int(1, 145); }
+      p.x -= Game.dt * 0.022; if (p.x < -90) { p.x = VW + 20; p.id = R.int(1, 138); }
       const px = Math.round(p.x / 2) * 2, hop = Math.abs(Math.round(Math.sin(t / 220 + p.id) * 2)) * 2;
       g.fillStyle = 'rgba(8,6,20,.5)'; g.fillRect(px + 14, 292, 36, 4); g.fillRect(px + 18, 290, 28, 8);
       drawMon(g, p.id, px, 232 - hop, 64);
@@ -458,7 +458,7 @@ const Title = {
     text(g, 'TAMERS OF', VW / 2 + 3, 28, { font: 'd', size: 17, align: 'center', color: PAL.gold, shadow: PAL.night, track: 7 });
     g.fillStyle = PAL.gold; [-88, 84].forEach(o => { g.fillRect(VW / 2 + o, 40, 4, 4); g.fillRect(VW / 2 + o + (o < 0 ? -24 : 8), 41, 20, 2); });
     for (const [ox, oy, c] of [[4, 6, PAL.night], [-2, 0, PAL.night], [2, 0, PAL.night], [0, -2, PAL.night], [0, 4, PAL.coral], [0, 0, PAL.parch]]) text(g, 'VESSARA', VW / 2 + 5 + ox, 42 + oy, { font: 'd', size: 62, align: 'center', color: c, track: 5 });
-    text(g, '151 monsters  ·  Eight sigils  ·  One crown', VW / 2, 122, { align: 'center', size: 11, color: PAL.parch2, shadow: PAL.night });
+    text(g, '144 monsters  ·  Eight sigils  ·  One crown', VW / 2, 122, { align: 'center', size: 11, color: PAL.parch2, shadow: PAL.night });
   },
 };
 function titleMenu(opts, hasSave) {
