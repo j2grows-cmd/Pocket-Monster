@@ -186,7 +186,7 @@ const World = {
         for (let i = 0; i < lights.length; i += 2) { const sx = lights[i], sy = lights[i + 1]; b.fillStyle = 'rgba(255,217,138,' + (L.night * .9) + ')'; b.fillRect(sx + 8, sy + 6, 16, 14); b.fillStyle = 'rgba(255,196,110,' + (L.night * .14) + ')'; b.fillRect(sx - 4, sy - 4, 40, 38); b.fillRect(sx + 2, sy + 2, 28, 34); }
       }
     }
-    b.drawImage(Scenery.vignette(), 0, 0, VW, VH);
+    if (!m.interior) b.drawImage(Scenery.vignette(), 0, 0, VW, VH);
     g.drawImage(this.buf, 0, 0, VW, VH);
     if (this.banner) {
       const bn = this.banner, age = bn.life - bn.t, a = Math.min(1, age / 220, bn.t / 300), ease = 1 - (1 - a) * (1 - a);
