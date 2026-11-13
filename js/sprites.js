@@ -9,16 +9,79 @@ function shade(h, f) { // f<0 darken, f>0 lighten
 }
 function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
-/* ---- vector helpers (unit space, y up is negative) ---- */
-function el(g, x, y, rx, ry, col, rot) { g.fillStyle = col; g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, Math.PI * 2); g.fill(); }
-function poly(g, p, col) { g.fillStyle = col; g.beginPath(); g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); g.fill(); }
-function rr(g, x, y, w, h, col) { g.fillStyle = col; g.fillRect(x, y, w, h); el(g, x + w / 2, y + h, w / 2 + 0.02, 0.07, col); }
-function line(g, p, w, col) { g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.stroke(); }
-function curve(g, p, w, col) {
-  g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(p[0], p[1]);
-  for (let i = 2; i < p.length - 2; i += 2) g.quadraticCurveTo(p[i], p[i + 1], (p[i] + p[i + 2]) / 2, (p[i + 1] + p[i + 3]) / 2);
-  g.lineTo(p[p.length - 2], p[p.length - 1]); g.stroke();
+/* ---- vector helpers (unit space, y up is negative) ----
+   While PAINT.vol is on, every shape is finished like hand-drawn pixel art: a shaded crescent away from the
+   light, a deeper core shadow, a highlight, and a contour line in a dark tone of its own colour.
+   Shadows lean toward blue and highlights toward yellow, the way a painted palette ramp does. */
+const PAINT = { vol: false, lw: .055, pal: null };
+const TONES = new Map();
+function hexHsl(hex) {
+  let [r, g, b] = hexRgb(hex); r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
 }
+function hslHex(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  const f = v => Math.round(clamp(v + m, 0, 1) * 255).toString(16).padStart(2, '0');
+  return '#' + f(r) + f(g) + f(b);
+}
+/* n: +2 glint, +1 light, -1 shade, -2 deep shade, -3 contour. */
+function tone(hex, n) {
+  const key = hex + n; let out = TONES.get(key); if (out) return out;
+  let [h, s, l] = hexHsl(hex);
+  const toward = (target, amt) => { const d = ((target - h + 540) % 360) - 180; h = (h + d * amt + 360) % 360; };
+  if (n < 0) {
+    const k = -n; if (s < .14) { h = 250; s = .08 + .05 * k; } else { toward(258, [0, .06, .1, .14][k]); s = Math.min(k === 3 ? .6 : 1, s * (1 + .06 * k) + .02 * k); }
+    l *= [1, .84, .68, .4][k]; if (k === 3) l = Math.min(l, .3);
+  } else { if (s >= .14) toward(52, .12 * n); s *= 1 - .1 * n; l += (1 - l) * [0, .34, .6][n]; }
+  out = hslHex(h, clamp(s, 0, 1), clamp(l, 0, 1)); TONES.set(key, out); return out;
+}
+function ink(c) { if (PAINT.pal) PAINT.pal.add(c); return c; }
+/* Fill a path, then give it volume and a contour. r is the shape's rough radius in units. */
+function solid(g, path, col, r, o) {
+  g.fillStyle = ink(col); g.fill(path);
+  if (!PAINT.vol) return;
+  if (r >= .13) {
+    g.save(); g.clip(path);
+    const crescent = (d, c) => { const sh = new Path2D(path); sh.addPath(path, new DOMMatrix([1, 0, 0, 1, -d, -d * 1.15])); g.fillStyle = ink(c); g.fill(sh, 'evenodd'); };
+    crescent(Math.min(.15, r * .34), tone(col, -1));
+    if (r >= .3) crescent(Math.min(.06, r * .13), tone(col, -2));
+    if (r >= .2 && o && o.hl) { g.fillStyle = ink(tone(col, 1)); g.beginPath(); g.ellipse(o.hl[0], o.hl[1], o.hl[2], o.hl[3], -.5, 0, 7); g.fill(); }
+    g.restore();
+  }
+  if (r >= .09) { g.strokeStyle = ink(tone(col, -3)); g.lineWidth = PAINT.lw; g.lineJoin = 'round'; g.stroke(path); }
+}
+function el(g, x, y, rx, ry, col, rot) {
+  const p = new Path2D(); p.ellipse(x, y, rx, ry, rot || 0, 0, Math.PI * 2);
+  solid(g, p, col, Math.min(rx, ry), { hl: [x - rx * .32, y - ry * .42, rx * .3, ry * .2] });
+}
+function poly(g, pts, col) {
+  const p = new Path2D(); p.moveTo(pts[0], pts[1]); let x0 = pts[0], x1 = pts[0], y0 = pts[1], y1 = pts[1];
+  for (let i = 2; i < pts.length; i += 2) { p.lineTo(pts[i], pts[i + 1]); x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]); }
+  p.closePath(); solid(g, p, col, Math.min(x1 - x0, y1 - y0) / 2);
+}
+function rr(g, x, y, w, h, col) {
+  const p = new Path2D(); p.rect(x, y, w, h); solid(g, p, col, w * .9);
+  const q = new Path2D(); q.ellipse(x + w / 2, y + h, w / 2 + 0.03, 0.08, 0, 0, Math.PI * 2); solid(g, q, col, .1);
+}
+function strokePts(g, pts, w, col, curved, dx, dy) {
+  g.strokeStyle = ink(col); g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); dx = dx || 0; dy = dy || 0;
+  g.moveTo(pts[0] + dx, pts[1] + dy);
+  if (curved) { for (let i = 2; i < pts.length - 2; i += 2) g.quadraticCurveTo(pts[i] + dx, pts[i + 1] + dy, (pts[i] + pts[i + 2]) / 2 + dx, (pts[i + 1] + pts[i + 3]) / 2 + dy); g.lineTo(pts[pts.length - 2] + dx, pts[pts.length - 1] + dy); }
+  else for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i] + dx, pts[i + 1] + dy);
+  g.stroke();
+}
+function tube(g, pts, w, col, curved) {
+  if (PAINT.vol && w >= .06) strokePts(g, pts, w + PAINT.lw * 1.7, tone(col, -3), curved);
+  strokePts(g, pts, w, col, curved);
+  if (PAINT.vol && w >= .18) { strokePts(g, pts, w * .34, tone(col, -1), curved, w * .2, w * .24); strokePts(g, pts, w * .22, tone(col, 1), curved, -w * .2, -w * .22); }
+}
+function line(g, p, w, col) { tube(g, p, w, col, false); }
+function curve(g, p, w, col) { tube(g, p, w, col, true); }
 function flame(g, x, y, s) {
   poly(g, [x - .16 * s, y, x - .2 * s, y - .25 * s, x - .05 * s, y - .2 * s, x, y - .55 * s, x + .1 * s, y - .25 * s, x + .2 * s, y - .32 * s, x + .16 * s, y], '#f08a2c');
   poly(g, [x - .08 * s, y, x - .08 * s, y - .14 * s, x, y - .32 * s, x + .08 * s, y - .12 * s, x + .08 * s, y], '#fbe36a');
@@ -81,8 +144,8 @@ const BODIES = {
   blob: {
     head: [0, -.6, .5], eyes: [[-.22, -.62], [.14, -.62]], top: [-.02, -1.14], back: [[.15, -1.1], [.64, -.5]], tail: [.62, -.2], wing: [.2, -.9], mouth: [-.04, -.42],
     draw(g, o) {
-      g.fillStyle = o.c; g.beginPath(); g.moveTo(-.72, -.02); g.bezierCurveTo(-.82, -1.0, -.4, -1.18, 0, -1.18);
-      g.bezierCurveTo(.4, -1.18, .82, -1.0, .72, -.02); g.quadraticCurveTo(0, .06, -.72, -.02); g.fill();
+      const p = new Path2D(); p.moveTo(-.72, -.02); p.bezierCurveTo(-.82, -1.0, -.4, -1.18, 0, -1.18);
+      p.bezierCurveTo(.4, -1.18, .82, -1.0, .72, -.02); p.quadraticCurveTo(0, .06, -.72, -.02); solid(g, p, o.c, .6);
       el(g, -.32, -.92, .14, .08, o.cl, -.5);
     },
   },
@@ -98,9 +161,9 @@ const BODIES = {
   ghost: {
     head: [0, -1.1, .5], eyes: [[-.2, -1.14], [.14, -1.14]], top: [0, -1.6], back: [[.3, -1.5], [.52, -.9]], tail: [.42, -.5], wing: [.3, -1.2], mouth: [-.03, -.92], float: 1,
     draw(g, o) {
-      g.fillStyle = o.c; g.beginPath(); g.moveTo(-.5, -1.1); g.arc(0, -1.1, .5, Math.PI, 0); g.lineTo(.5, -.55);
-      g.quadraticCurveTo(.4, -.2, .25, -.48); g.quadraticCurveTo(.1, -.1, -.05, -.45); g.quadraticCurveTo(-.2, -.15, -.3, -.5);
-      g.quadraticCurveTo(-.42, -.3, -.5, -.55); g.closePath(); g.fill();
+      const p = new Path2D(); p.moveTo(-.5, -1.1); p.arc(0, -1.1, .5, Math.PI, 0); p.lineTo(.5, -.55);
+      p.quadraticCurveTo(.4, -.2, .25, -.48); p.quadraticCurveTo(.1, -.1, -.05, -.45); p.quadraticCurveTo(-.2, -.15, -.3, -.5);
+      p.quadraticCurveTo(-.42, -.3, -.5, -.55); p.closePath(); solid(g, p, o.c, .5, { hl: [-.2, -1.32, .16, .1] });
       el(g, -.6, -.85, .14, .1, o.c, .4); el(g, .6, -.85, .14, .1, o.c, -.4);
       el(g, -.02, -.72, .2, .08, o.c2);
     },
@@ -119,7 +182,7 @@ const BODIES = {
     head: [0, -.42, .34], eyes: [[-.14, -.42], [.12, -.42]], top: [0, -1.32], back: [[.3, -1.25], [.7, -.85]], tail: [.3, -.2], wing: [.3, -.6], mouth: [-.01, -.26],
     draw(g, o) {
       el(g, 0, -.36, .34, .38, o.c2);
-      g.fillStyle = o.c; g.beginPath(); g.ellipse(0, -.72, .78, .62, 0, Math.PI, 0); g.closePath(); g.fill();
+      { const p = new Path2D(); p.ellipse(0, -.72, .78, .62, 0, Math.PI, 0); p.closePath(); solid(g, p, o.c, .6, { hl: [-.3, -1.12, .2, .1] }); }
       el(g, 0, -.72, .78, .1, o.cd);
       if (o.f.sd) { el(g, -.36, -1.0, .13, .1, o.cl); el(g, .22, -1.08, .15, .11, o.cl); el(g, .52, -.86, .08, .07, o.cl); el(g, -.02, -.88, .07, .06, o.cl); }
     },
@@ -151,7 +214,7 @@ const BODIES = {
     head: [0, -1.05, .5], eyes: [[-.2, -1.0], [.14, -1.0]], top: [0, -1.48], back: [[.3, -1.4], [.5, -1.0]], tail: [.3, -.5], wing: [.3, -1.2], mouth: [-.03, -.85], float: 1,
     draw(g, o) {
       for (const x of [-.36, -.12, .12, .36]) curve(g, [x, -.85, x + .09, -.6, x - .09, -.36, x + .05, -.1], .09, o.cd);
-      g.fillStyle = o.c; g.beginPath(); g.ellipse(0, -.85, .58, .64, 0, Math.PI, 0); g.closePath(); g.fill();
+      { const p = new Path2D(); p.ellipse(0, -.85, .58, .64, 0, Math.PI, 0); p.closePath(); solid(g, p, o.c, .55, { hl: [-.22, -1.26, .16, .1] }); }
       el(g, 0, -.85, .58, .1, o.cd); el(g, 0, -1.18, .3, .16, o.c2);
     },
   },
@@ -186,67 +249,98 @@ const BODIES = {
   },
 };
 
-function paintMonster(art, size) {
-  const S = size || 64, cv = makeCanvas(S, S), g = cv.getContext('2d');
-  const B = BODIES[art.b], f = {};
+/* Paint one monster. size: 64 (battle and menus), 96 (your side of the field), 32 (icon).
+   back: the view from behind, with no face. Each sprite is measured first and then redrawn so it fills its frame. */
+function paintMonster(art, size, back) {
+  const S = size || 64, B = BODIES[art.b], f = {};
   art.f.forEach(k => f[k] = 1);
+  if (back) { delete f.mk; delete f.tu; delete f.fng; }
   const o = { c: art.c, c2: art.c2, cd: shade(art.c, -.3), cl: shade(art.c, .5), f };
-  const k = (S < 64 ? 25.5 : 24) * art.s * S / 64;
-  g.save(); g.translate(S / 2, S * 60 / 64); g.scale(k, k);
-  const [hx, hy, hr] = B.head, [tx, ty] = B.tail, [wx, wy] = B.wing, [px, py] = B.top, [mx, my] = B.mouth;
-  // ---- behind the body ----
-  if (f.halo) { g.strokeStyle = shade(o.c2, .3); g.lineWidth = .08; g.beginPath(); g.arc(hx, hy - .05, hr + .34, 0, 7); g.stroke(); }
-  if (f.cl) { el(g, -.5, -.1, .3, .2, '#eef2f8'); el(g, 0, -.06, .34, .2, '#eef2f8'); el(g, .5, -.1, .3, .2, '#eef2f8'); }
-  if (f.wd && art.b !== 'wing') {
-    poly(g, [wx, wy + .2, wx + .15, wy - .8, wx + .8, wy - .55, wx + .58, wy - .28, wx + .78, wy, wx + .35, wy + .05], o.c2);
-    line(g, [wx, wy + .2, wx + .15, wy - .8], .07, o.cd);
-  }
-  if (f.wb) { el(g, wx + .3, wy - .3, .5, .2, o.c2, -.6); el(g, wx + .35, wy - .12, .42, .16, shade(o.c2, -.2), -.4); }
-  if (f.wi) { el(g, wx + .12, wy - .34, .17, .42, '#e8f6fc', .5); el(g, wx + .32, wy - .22, .15, .36, '#cfeaf6', .95); }
-  if (f.tn || f.tf || f.tl) curve(g, [tx - .1, ty, tx + .22, ty - .05, tx + .36, ty - .3, tx + .32, ty - .52], .11, o.c);
-  if (f.tf) flame(g, tx + .32, ty - .45, .9);
-  if (f.tl) el(g, tx + .36, ty - .62, .2, .11, LEAF, -.9);
-  if (f.tb) line(g, [tx - .1, ty, tx + .25, ty - .18, tx + .08, ty - .36, tx + .42, ty - .62], .11, o.c2);
-  if (f.tfin) poly(g, [tx - .1, ty, tx + .42, ty - .32, tx + .3, ty, tx + .42, ty + .26], o.c2);
-  if (f.ts) { curve(g, [tx - .1, ty, tx + .4, ty - .25, tx + .3, ty - .8, tx - .1, ty - .9], .12, o.c); poly(g, [tx - .1, ty - 1.0, tx - .36, ty - .82, tx - .08, ty - .78], o.c2 === '#3a3a3a' ? '#3a3a3a' : shade(o.c, -.4)); }
-  if (f.mn) { el(g, hx + .3, hy - .12, .19, .19, o.c2); el(g, hx + .36, hy + .14, .19, .19, o.c2); el(g, hx + .2, hy - .32, .17, .17, o.c2); }
-  // ---- body ----
-  B.draw(g, o);
-  // ---- on top ----
-  g.globalCompositeOperation = 'source-atop';
-  if (f.st) { for (let i = 0; i < 3; i++) { const t = i / 2, bx = lerp(B.back[0][0], B.back[1][0], t), by = lerp(B.back[0][1], B.back[1][1], t); line(g, [bx, by - .05, bx + .06, by + .3], .07, o.cd); } }
-  if (f.sd && art.b !== 'shroom') { el(g, hx + .5, hy + .25, .1, .08, o.cd); el(g, hx + .78, hy + .42, .08, .07, o.cd); el(g, hx + .95, hy + .2, .09, .07, o.cd); el(g, hx + .3, hy + .55, .07, .06, o.cd); }
-  if (f.sh) { line(g, [-.2, -.95, .0, -.3], .05, shade(o.c, .35)); line(g, [.2, -1.0, .35, -.3], .05, shade(o.c, .35)); line(g, [.55, -.92, .62, -.4], .05, shade(o.c, .35)); }
-  g.globalCompositeOperation = 'source-over';
-  if (f.sp) { const sc = art.b === 'biped' || art.b === 'blob' ? shade(o.c, -.4) : (f.bl ? shade(o.c, -.4) : o.c2); for (let i = 0; i < 4; i++) { const t = i / 3, bx = lerp(B.back[0][0], B.back[1][0], t), by = lerp(B.back[0][1], B.back[1][1], t); poly(g, [bx - .1, by + .06, bx + .08, by - .26, bx + .14, by + .08], sc); } }
-  if (f.cr || f.ic) { const cc = f.ic ? '#e2f7ff' : shade(o.c2, .2), b = B.back; const mxp = (b[0][0] + b[1][0]) / 2, myp = (b[0][1] + b[1][1]) / 2;
-    poly(g, [mxp - .2, myp + .08, mxp - .12, myp - .34, mxp + .02, myp + .05], cc); poly(g, [mxp, myp + .08, mxp + .14, myp - .46, mxp + .26, myp + .1], shade(cc, -.12)); poly(g, [mxp + .22, myp + .12, mxp + .4, myp - .2, mxp + .46, myp + .16], cc); }
-  if (f.er) { el(g, hx - .25, hy - .3, .14, .14, o.c); el(g, hx + .22, hy - .32, .14, .14, o.c); el(g, hx - .25, hy - .29, .07, .07, o.cl); el(g, hx + .22, hy - .31, .07, .07, o.cl); }
-  if (f.ep) { poly(g, [hx - .34, hy - .16, hx - .32, hy - .64, hx - .06, hy - .3], o.c); poly(g, [hx + .04, hy - .3, hx + .3, hy - .64, hx + .34, hy - .16], o.c); poly(g, [hx - .28, hy - .3, hx - .28, hy - .52, hx - .14, hy - .32], o.cl); }
-  if (f.el) { el(g, hx - .2, hy - .55, .09, .32, o.c, -.2); el(g, hx + .2, hy - .55, .09, .32, o.c, .3); el(g, hx - .2, hy - .55, .04, .2, o.cl, -.2); }
-  if (f.h1) poly(g, [hx - .26, hy - .26, hx - .36, hy - .8, hx - .04, hy - .34], BONE);
-  if (f.h2) { poly(g, [hx - .3, hy - .2, hx - .46, hy - .72, hx - .1, hy - .32], BONE); poly(g, [hx + .08, hy - .32, hx + .42, hy - .72, hx + .3, hy - .2], BONE); }
-  if (f.hr) { g.strokeStyle = BONE; g.lineWidth = .13; g.lineCap = 'round'; g.beginPath(); g.arc(hx - .3, hy - .14, .2, -2.6, 1.9); g.stroke(); g.beginPath(); g.arc(hx + .3, hy - .14, .2, -2.2, 2.3); g.stroke(); }
-  if (f.lf) { line(g, [px, py + .1, px + .02, py - .12], .06, LEAF); el(g, px + .16, py - .2, .22, .1, LEAF, -.6); el(g, px - .12, py - .18, .18, .09, shade(LEAF, .2), .6); }
-  if (f.fl) flame(g, px, py + .08, 1);
-  if (f.fc) { el(g, px + .1, py - .08, .08, .26, o.c2, .5); el(g, px + .24, py + .02, .08, .24, shade(o.c2, -.15), .9); el(g, px - .02, py - .1, .07, .22, shade(o.c2, .2), .15); }
-  if (f.an) { curve(g, [hx - .1, hy - hr + .05, hx - .2, hy - hr - .25, hx - .34, hy - hr - .3], .05, INK); curve(g, [hx + .08, hy - hr + .05, hx + .16, hy - hr - .28, hx + .02, hy - hr - .38], .05, INK); el(g, hx - .34, hy - hr - .3, .07, .07, o.c2); el(g, hx + .02, hy - hr - .38, .07, .07, o.c2); }
-  if (f.tu) { poly(g, [mx - .06, my - .02, mx - .2, my + .3, mx + .06, my + .04], BONE); poly(g, [mx + .2, my - .02, mx + .12, my + .28, mx + .32, my + .04], BONE); }
-  if (f.fng) { poly(g, [mx - .04, my, mx + .02, my + .16, mx + .08, my], '#ffffff'); poly(g, [mx + .14, my, mx + .2, my + .16, mx + .26, my], '#ffffff'); }
-  if (f.mk) { el(g, hx - .03, hy - .02, hr * .8, hr * .62, '#fbf7ee'); el(g, hx - .03, hy + hr * .5, hr * .3, hr * .12, o.c2); }
-  // ---- eyes ----
-  const er = B.er || hr * .26, es = art.eye;
-  const eyes = f.eye1 ? [[hx - .03, hy]] : B.eyes;
-  for (const [ex, ey] of eyes) {
-    const r = f.eye1 ? er * 2.2 : es === 'b' ? er * 1.25 : er;
-    if (es === 's') { line(g, [ex - r, ey, ex, ey + r * .6, ex + r, ey], .05, INK); continue; }
-    el(g, ex, ey, r, r * 1.08, f.mk ? o.c2 : '#ffffff');
-    el(g, ex - r * .22, ey + r * .05, r * (es === 'b' ? .66 : .56), r * (es === 'b' ? .72 : .6), INK);
-    if (es === 'b' || f.eye1) el(g, ex - r * .4, ey - r * .3, r * .26, r * .26, '#ffffff');
-    if (es === 'a') poly(g, [ex - r * 1.4, ey - r * .3, ex + r * 1.3, ey - r * 1.5, ex + r * 1.3, ey - r * .9, ex - r * 1.4, ey + r * .15], o.cd);
-  }
-  g.restore();
-  return pixelize(cv, { depth: S >= 64 ? 3 : 1 });
+  const pal = new Set(['#ffffff', INK]);
+  const drawAll = (cv, k, ox, oy) => {
+    const g = cv.getContext('2d');
+    PAINT.pal = pal; PAINT.vol = true; PAINT.lw = (S >= 64 ? 1.25 : 1.0) / k;
+    g.save(); g.translate(ox, oy); g.scale(k, k);
+    const [hx, hy, hr] = B.head, [tx, ty] = B.tail, [wx, wy] = B.wing, [px, py] = B.top, [mx, my] = B.mouth;
+    // ---- behind the body ----
+    if (f.halo) { for (const [w, c] of [[.08 + PAINT.lw * 1.7, tone(o.c2, -3)], [.08, tone(o.c2, 1)]]) { g.strokeStyle = ink(c); g.lineWidth = w; g.beginPath(); g.arc(hx, hy - .05, hr + .34, 0, 7); g.stroke(); } }
+    if (f.cl) { el(g, -.5, -.1, .3, .2, '#eef2f8'); el(g, 0, -.06, .34, .2, '#eef2f8'); el(g, .5, -.1, .3, .2, '#eef2f8'); }
+    if (f.wd && art.b !== 'wing') {
+      poly(g, [wx, wy + .2, wx + .15, wy - .8, wx + .8, wy - .55, wx + .58, wy - .28, wx + .78, wy, wx + .35, wy + .05], o.c2);
+      line(g, [wx, wy + .2, wx + .15, wy - .8], .07, o.cd);
+    }
+    if (f.wb) { el(g, wx + .3, wy - .3, .5, .2, o.c2, -.6); el(g, wx + .35, wy - .12, .42, .16, shade(o.c2, -.2), -.4); }
+    if (f.wi) { el(g, wx + .12, wy - .34, .17, .42, '#e8f6fc', .5); el(g, wx + .32, wy - .22, .15, .36, '#cfeaf6', .95); }
+    if (f.tn || f.tf || f.tl) curve(g, [tx - .1, ty, tx + .22, ty - .05, tx + .36, ty - .3, tx + .32, ty - .52], .11, o.c);
+    if (f.tf) flame(g, tx + .32, ty - .45, .9);
+    if (f.tl) el(g, tx + .36, ty - .62, .2, .11, LEAF, -.9);
+    if (f.tb) line(g, [tx - .1, ty, tx + .25, ty - .18, tx + .08, ty - .36, tx + .42, ty - .62], .11, o.c2);
+    if (f.tfin) poly(g, [tx - .1, ty, tx + .42, ty - .32, tx + .3, ty, tx + .42, ty + .26], o.c2);
+    if (f.ts) { curve(g, [tx - .1, ty, tx + .4, ty - .25, tx + .3, ty - .8, tx - .1, ty - .9], .12, o.c); poly(g, [tx - .1, ty - 1.0, tx - .36, ty - .82, tx - .08, ty - .78], o.c2 === '#3a3a3a' ? '#3a3a3a' : shade(o.c, -.4)); }
+    if (f.mn) { el(g, hx + .3, hy - .12, .19, .19, o.c2); el(g, hx + .36, hy + .14, .19, .19, o.c2); el(g, hx + .2, hy - .32, .17, .17, o.c2); }
+    // ---- body ----
+    B.draw(g, o);
+    // ---- on top ----
+    g.globalCompositeOperation = 'source-atop';
+    if (f.st) { for (let i = 0; i < 3; i++) { const t = i / 2, bx = lerp(B.back[0][0], B.back[1][0], t), by = lerp(B.back[0][1], B.back[1][1], t); line(g, [bx, by - .05, bx + .06, by + .3], .07, o.cd); } }
+    if (f.sd && art.b !== 'shroom') { el(g, hx + .5, hy + .25, .1, .08, o.cd); el(g, hx + .78, hy + .42, .08, .07, o.cd); el(g, hx + .95, hy + .2, .09, .07, o.cd); el(g, hx + .3, hy + .55, .07, .06, o.cd); }
+    if (f.sh) { line(g, [-.2, -.95, .0, -.3], .05, shade(o.c, .35)); line(g, [.2, -1.0, .35, -.3], .05, shade(o.c, .35)); line(g, [.55, -.92, .62, -.4], .05, shade(o.c, .35)); }
+    g.globalCompositeOperation = 'source-over';
+    if (f.sp) { const sc = art.b === 'biped' || art.b === 'blob' ? shade(o.c, -.4) : (f.bl ? shade(o.c, -.4) : o.c2); for (let i = 0; i < 4; i++) { const t = i / 3, bx = lerp(B.back[0][0], B.back[1][0], t), by = lerp(B.back[0][1], B.back[1][1], t); poly(g, [bx - .1, by + .06, bx + .08, by - .26, bx + .14, by + .08], sc); } }
+    if (f.cr || f.ic) { const cc = f.ic ? '#e2f7ff' : shade(o.c2, .2), b = B.back; const mxp = (b[0][0] + b[1][0]) / 2, myp = (b[0][1] + b[1][1]) / 2;
+      poly(g, [mxp - .2, myp + .08, mxp - .12, myp - .34, mxp + .02, myp + .05], cc); poly(g, [mxp, myp + .08, mxp + .14, myp - .46, mxp + .26, myp + .1], shade(cc, -.12)); poly(g, [mxp + .22, myp + .12, mxp + .4, myp - .2, mxp + .46, myp + .16], cc); }
+    if (f.er) { el(g, hx - .25, hy - .3, .14, .14, o.c); el(g, hx + .22, hy - .32, .14, .14, o.c); el(g, hx - .25, hy - .29, .07, .07, o.cl); el(g, hx + .22, hy - .31, .07, .07, o.cl); }
+    if (f.ep) { poly(g, [hx - .34, hy - .16, hx - .32, hy - .64, hx - .06, hy - .3], o.c); poly(g, [hx + .04, hy - .3, hx + .3, hy - .64, hx + .34, hy - .16], o.c); poly(g, [hx - .28, hy - .3, hx - .28, hy - .52, hx - .14, hy - .32], o.cl); }
+    if (f.el) { el(g, hx - .2, hy - .55, .09, .32, o.c, -.2); el(g, hx + .2, hy - .55, .09, .32, o.c, .3); el(g, hx - .2, hy - .55, .04, .2, o.cl, -.2); }
+    if (f.h1) poly(g, [hx - .26, hy - .26, hx - .36, hy - .8, hx - .04, hy - .34], BONE);
+    if (f.h2) { poly(g, [hx - .3, hy - .2, hx - .46, hy - .72, hx - .1, hy - .32], BONE); poly(g, [hx + .08, hy - .32, hx + .42, hy - .72, hx + .3, hy - .2], BONE); }
+    if (f.hr) { for (const [w, c] of [[.13 + PAINT.lw * 1.7, tone(BONE, -3)], [.13, BONE], [.04, tone(BONE, -1)]]) { g.strokeStyle = ink(c); g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.arc(hx - .3, hy - .14, .2, -2.6, 1.9); g.stroke(); g.beginPath(); g.arc(hx + .3, hy - .14, .2, -2.2, 2.3); g.stroke(); } }
+    if (f.lf) { line(g, [px, py + .1, px + .02, py - .12], .06, LEAF); el(g, px + .16, py - .2, .22, .1, LEAF, -.6); el(g, px - .12, py - .18, .18, .09, shade(LEAF, .2), .6); }
+    if (f.fl) flame(g, px, py + .08, 1);
+    if (f.fc) { el(g, px + .1, py - .08, .08, .26, o.c2, .5); el(g, px + .24, py + .02, .08, .24, shade(o.c2, -.15), .9); el(g, px - .02, py - .1, .07, .22, shade(o.c2, .2), .15); }
+    if (f.an) { curve(g, [hx - .1, hy - hr + .05, hx - .2, hy - hr - .25, hx - .34, hy - hr - .3], .05, INK); curve(g, [hx + .08, hy - hr + .05, hx + .16, hy - hr - .28, hx + .02, hy - hr - .38], .05, INK); el(g, hx - .34, hy - hr - .3, .07, .07, o.c2); el(g, hx + .02, hy - hr - .38, .07, .07, o.c2); }
+    if (f.tu) { poly(g, [mx - .06, my - .02, mx - .2, my + .3, mx + .06, my + .04], BONE); poly(g, [mx + .2, my - .02, mx + .12, my + .28, mx + .32, my + .04], BONE); }
+    if (f.fng) { poly(g, [mx - .04, my, mx + .02, my + .16, mx + .08, my], '#ffffff'); poly(g, [mx + .14, my, mx + .2, my + .16, mx + .26, my], '#ffffff'); }
+    if (f.mk) { el(g, hx - .03, hy - .02, hr * .8, hr * .62, '#fbf7ee'); el(g, hx - .03, hy + hr * .5, hr * .3, hr * .12, o.c2); }
+    // ---- face ----
+    PAINT.vol = false;
+    const er = B.er || hr * .26, es = art.eye, lw = PAINT.lw;
+    const eyes = f.eye1 ? [[hx - .03, hy]] : B.eyes;
+    if (!back) {
+      for (const [ex, ey] of eyes) {
+        const r = f.eye1 ? er * 2.2 : es === 'b' ? er * 1.3 : er * 1.08;
+        if (es === 's') { strokePts(g, [ex - r, ey, ex, ey + r * .6, ex + r, ey], lw * 1.3, INK); continue; }
+        el(g, ex, ey, r + lw * .75, r * 1.08 + lw * .75, tone(o.c, -3));
+        el(g, ex, ey, r, r * 1.08, f.mk ? o.c2 : '#ffffff');
+        el(g, ex - r * .2, ey + r * .08, r * (es === 'b' ? .7 : .6), r * (es === 'b' ? .78 : .66), INK);
+        el(g, ex - r * .42, ey - r * .34, r * .3, r * .3, '#ffffff');
+        if (es === 'b') el(g, ex + r * .1, ey + r * .42, r * .16, r * .16, '#ffffff');
+        if (es === 'a') poly(g, [ex - r * 1.5, ey - r * .4, ex + r * 1.4, ey - r * 1.6, ex + r * 1.4, ey - r * .95, ex - r * 1.5, ey + r * .1], tone(o.c, -2));
+      }
+      // a mouth and a blush give the face its expression
+      const beaked = art.b === 'bird' || art.b === 'wing' || art.b === 'crab' || art.b === 'bug';
+      if (!beaked && !f.mk && !f.eye1 && !f.tu && !f.fng) {
+        const mw = hr * .2, mouth = es === 'a' ? [mx - mw, my + mw * .3, mx, my, mx + mw, my + mw * .3] : es === 's' ? [mx - mw * .7, my, mx + mw * .7, my] : [mx - mw, my, mx, my + mw * .75, mx + mw, my];
+        strokePts(g, mouth, lw * 1.25, tone(o.c, -3), es !== 's');
+      }
+      if (es === 'b' && !f.mk && !f.eye1) for (const [ex, ey] of eyes) el(g, ex + er * .2, ey + er * 1.9, er * .7, er * .42, '#f29a9a');
+    }
+    g.restore(); PAINT.pal = null; PAINT.vol = false;
+  };
+  // pass 1: draw large and measure
+  const probe = makeCanvas(S * 3, S * 3), k0 = 24 * art.s * S / 64, PX = S * 1.5, PY = S * 2.4;
+  drawAll(probe, k0, PX, PY);
+  const d = probe.getContext('2d').getImageData(0, 0, S * 3, S * 3).data;
+  let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+  for (let y = 0; y < S * 3; y++) for (let x = 0; x < S * 3; x++) if (d[(y * S * 3 + x) * 4 + 3] >= 110) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) { x0 = y0 = 0; x1 = y1 = S; }
+  // small first forms stay small, final forms and legends fill the frame
+  const want = S * (0.62 + 0.3 * clamp((art.s - .66) / .42, 0, 1)), fit = clamp(want / Math.max(x1 - x0 + 1, y1 - y0 + 1), .6, 1.9);
+  const cv = makeCanvas(S, S), pad = S >= 64 ? 3 : 2;
+  drawAll(cv, k0 * fit, S / 2 - ((x0 + x1 + 1) / 2 - PX) * fit, (S - pad) - (y1 + 1 - PY) * fit);
+  pixelize(cv, { pal, lightOnly: true });
+  if (!back) return cv;
+  const out = makeCanvas(S, S), og = out.getContext('2d'); og.translate(S, 0); og.scale(-1, 1); og.drawImage(cv, 0, 0); return out;
 }
 
 /* Snap soft vector edges to hard pixels, then finish the sprite the way a pixel artist would:
@@ -258,6 +352,14 @@ function pixelize(cv, o) {
   const im = g.getImageData(0, 0, w, h), d = im.data, solid = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) { if (d[i * 4 + 3] >= 110) { solid[i] = 1; d[i * 4 + 3] = 255; } else d[i * 4 + 3] = 0; }
   const at = (x, y) => x >= 0 && y >= 0 && x < w && y < h && solid[y * w + x];
+  if (o.pal) { // snap blended edge pixels back onto the sprite's own palette, so every pixel is a deliberate colour
+    const P = [...o.pal].map(hexRgb);
+    for (let i = 0; i < w * h; i++) {
+      if (!solid[i]) continue; const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2]; let best = 0, bd = 1e9;
+      for (let k = 0; k < P.length; k++) { const dr = r - P[k][0], dg = gg - P[k][1], db = b - P[k][2], dist = dr * dr * 2 + dg * dg * 4 + db * db * 3; if (dist < bd) { bd = dist; best = k; } }
+      d[i * 4] = P[best][0]; d[i * 4 + 1] = P[best][1]; d[i * 4 + 2] = P[best][2];
+    }
+  }
   if (depth) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x; if (!solid[i]) continue;
     const lit = !at(x - depth, y - depth), dark = !at(x + depth, y + depth) || !at(x, y + depth);
@@ -268,6 +370,7 @@ function pixelize(cv, o) {
     const i = y * w + x; if (solid[i]) continue;
     const n = (y < h - 1 && solid[i + w]) ? i + w : (x > 0 && solid[i - 1]) ? i - 1 : (x < w - 1 && solid[i + 1]) ? i + 1 : (y > 0 && solid[i - w]) ? i - w : -1;
     if (n < 0) continue;
+    if (o.lightOnly && d[n * 4] * .3 + d[n * 4 + 1] * .59 + d[n * 4 + 2] * .11 < 78) continue; // already has a dark contour there
     d[i * 4] = d[n * 4] * 0.26 + 23 * 0.74; d[i * 4 + 1] = d[n * 4 + 1] * 0.24 + 22 * 0.76; d[i * 4 + 2] = d[n * 4 + 2] * 0.28 + 41 * 0.72; d[i * 4 + 3] = 255;
   }
   g.putImageData(im, 0, 0);
@@ -280,14 +383,16 @@ function tinted(src, col) {
 }
 
 const Sprites = {
-  _mon: {}, _flip: {}, _sil: {}, _white: {}, _icon: {}, _char: {}, _tile: new Map(), _edge: new Map(), _prop: {}, _misc: {},
+  _mon: {}, _flip: {}, _sil: {}, _white: {}, _icon: {}, _back: {}, _backW: {}, _char: {}, _tile: new Map(), _edge: new Map(), _prop: {}, _misc: {},
   mon(id) { return this._mon[id] || (this._mon[id] = paintMonster(DEX[id].art)); },
   icon(id) { return this._icon[id] || (this._icon[id] = paintMonster(DEX[id].art, 32)); },
+  back(id) { return this._back[id] || (this._back[id] = paintMonster(DEX[id].art, 96, true)); },
   monFlip(id) {
     if (!this._flip[id]) { const s = this.mon(id), c = makeCanvas(64, 64), g = c.getContext('2d'); g.translate(64, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); this._flip[id] = c; }
     return this._flip[id];
   },
   silhouette(id) { return this._sil[id] || (this._sil[id] = tinted(this.mon(id), '#473f70')); },
+  backWhite(id) { return this._backW[id] || (this._backW[id] = tinted(this.back(id), '#fff9ea')); },
   white(id, flip) { const k = id + (flip ? 'f' : ''); return this._white[k] || (this._white[k] = tinted(flip ? this.monFlip(id) : this.mon(id), '#fff9ea')); },
   char(pal, dir, frame) {
     const key = pal + '|' + dir + '|' + frame;

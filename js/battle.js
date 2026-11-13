@@ -355,22 +355,23 @@ const Battle = {
     const t = Game.t, even = n => Math.round(n / 2) * 2;
     g.drawImage(Scenery.backdrop(v.biome), 0, 0, VW, VH);
     Scenery.ambient(g, v.biome, 0, 0, v.biome === 3 ? 1 : 0, true);
-    const CEN = { foe: [394, 102], me: [104, 170] };
+    const CEN = { foe: [394, 106], me: [104, 156] };
     // the other tamer steps up before and after the fight
     const T_ = v.opts.trainer;
     if (T_ && T_.pal && v.trainerShow > 0.02) { g.globalAlpha = v.trainerShow; g.drawImage(Sprites.char(T_.pal, 'down', 0), even(358 + (1 - v.trainerShow) * 40), 70, 72, 88); g.globalAlpha = 1; }
-    const sprite = (b, show, dxo, bx, by, flip) => {
+    // the foe faces you at 2x; your own monster is seen from behind, larger and closer
+    const sprite = (b, show, dxo, bx, by, mine) => {
       if (show <= 0.02 || (v[b.side + 'Blink'] > t && v.flash[b.side] < t && Math.floor(t / 55) % 2)) return;
-      const id = b.mon.id; let oy = (1 - show) * 28, h = 128;
-      if (BODIES[DEX[id].art.b].float) oy += Math.round(Math.sin(t / 380 + (flip ? 2 : 0)) * 2) * 2;
-      else if (Math.floor(t / 640 + (flip ? .5 : 0)) % 2) { h = 126; oy += 2; } // breathing
+      const id = b.mon.id, size = mine ? 192 : 128; let oy = (1 - show) * 28, h = size;
+      if (BODIES[DEX[id].art.b].float) oy += Math.round(Math.sin(t / 380 + (mine ? 2 : 0)) * 2) * 2;
+      else if (Math.floor(t / 640 + (mine ? .5 : 0)) % 2) { h = size - 2; oy += 2; } // breathing
       const sh = v.shake[b.side] > t ? (Math.floor(t / 45) % 2 ? 4 : -4) : 0;
-      g.globalAlpha = show; g.drawImage(flip ? Sprites.monFlip(id) : Sprites.mon(id), even(bx + dxo) + sh, even(by + oy), 128, h);
-      if (v.flash[b.side] > t) { g.globalAlpha = clamp((v.flash[b.side] - t) / 150, 0, 1); g.drawImage(Sprites.white(id, flip), even(bx + dxo) + sh, even(by + oy), 128, h); }
+      g.globalAlpha = show; g.drawImage(mine ? Sprites.back(id) : Sprites.mon(id), even(bx + dxo) + sh, even(by + oy), size, h);
+      if (v.flash[b.side] > t) { g.globalAlpha = clamp((v.flash[b.side] - t) / 150, 0, 1); g.drawImage(mine ? Sprites.backWhite(id) : Sprites.white(id), even(bx + dxo) + sh, even(by + oy), size, h); }
       g.globalAlpha = 1;
     };
     sprite(v.foe, v.foeShow, v.foeDX, 330, 34, false);
-    sprite(v.me, v.meShow, v.meDX, 40, 96, true);
+    sprite(v.me, v.meShow, v.meDX, 8, 38, true);
     if (v.charm) { g.save(); g.translate(v.charm.x + 16, v.charm.y + 32); g.rotate(v.charm.rock * 0.35); g.drawImage(objSprite('charm'), -16, -32, 32, 32); g.restore(); }
 
     // ---- effects ----
