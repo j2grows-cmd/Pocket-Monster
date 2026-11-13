@@ -19,12 +19,13 @@ const U = 2;
    Body (rounded sans): dialogue, descriptions, numbers, anything read in a sentence. */
 const F_DISPLAY = '"Jersey 20", "Trebuchet MS", Verdana, sans-serif';
 const F_BODY = 'Nunito, "Trebuchet MS", "Segoe UI", system-ui, sans-serif';
-let FONT_SCALE = 1; // the pixel face runs small, so it is scaled up once it has loaded
+let FONT_SCALE = 0.86; // fallback faces run wide; main.js raises this to 1.22 once the pixel face has loaded
 function setFont(g, size, o) {
   o = o || {};
-  if (o.font === 'd') g.font = Math.round(size * FONT_SCALE) + 'px ' + F_DISPLAY;
+  const fallback = FONT_SCALE < 1;
+  if (o.font === 'd') g.font = (fallback ? '700 ' : '') + Math.round(size * FONT_SCALE) + 'px ' + F_DISPLAY;
   else g.font = (o.weight || (o.bold ? 800 : 700)) + ' ' + size + 'px ' + F_BODY;
-  if ('letterSpacing' in g) g.letterSpacing = (o.track || 0) + 'px';
+  if ('letterSpacing' in g) g.letterSpacing = (o.font === 'd' && fallback ? (o.track || 0) * .4 : (o.track || 0)) + 'px';
 }
 function text(g, str, x, y, o) {
   o = o || {};
