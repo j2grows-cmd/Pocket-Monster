@@ -95,7 +95,7 @@ const Scenery = {
     if (bio === -1) for (let y = H + 6, i = 0; y < 160; y += 8 + i * 3, i++) for (let x = (i % 2) * 20; x < 240; x += 40) p(x, y, 2, 6 + i * 3, d.gr[1]);
     if (bio === 0 || bio === 3) for (let i = 0; i < 18; i++) { const y = H + 6 + r() * 80, x = r() * 240; p(x, y, 1, 3, d.gr[1]); p(x + 1, y - 1, 1, 4, d.gr[2]); p(x + 2, y, 1, 3, d.gr[1]); }
     const rim = shade(d.gr[1], -.22), top = shade(d.gr[0], bio === 4 ? -.06 : .1), sh = shade(d.gr[1], -.34);
-    this._platform(p, 197, 66, 46, 9, top, rim, sh); this._platform(p, 52, 108, 54, 11, top, rim, sh);
+    this._platform(p, 197, 77, 46, 8, top, rim, sh); this._platform(p, 52, 108, 54, 11, top, rim, sh);
     return this._bg[bio] = c;
   },
 
@@ -147,11 +147,11 @@ const Scenery = {
   },
 
   /* ---- ambient life over the world: pollen, fireflies, embers, snow ---- */
-  ambient(b, bio, camX, camY, night) {
+  ambient(b, bio, camX, camY, night, noClouds) {
     const t = Game.t, W = VW + 40, H = VH + 40;
     const R = (i, k) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
     const put = (x, y, w, h, col) => { b.fillStyle = col; b.fillRect((Math.floor((((x - camX) % W) + W) % W - 20) >> 1) << 1, (Math.floor((((y - camY) % H) + H) % H - 20) >> 1) << 1, w, h); };
-    if ((bio === 0 || bio === 1 || bio === 5) && night < .5) { // slow cloud shadows
+    if (!noClouds && (bio === 0 || bio === 1 || bio === 5) && night < .5) { // slow cloud shadows
       b.globalAlpha = .07 * (1 - night * 2); b.imageSmoothingEnabled = false;
       for (let i = 0; i < 3; i++) { const x = ((R(i, 1) * 900 + t * .012 - camX * 1) % 900 + 900) % 900 - 220, y = ((R(i, 2) * 700 - camY) % 700 + 700) % 700 - 160; b.drawImage(this.cloud(), Math.round(x / 4) * 4, Math.round(y / 4) * 4, 192, 96); }
       b.globalAlpha = 1;
