@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Tamers of Vessara</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Jersey+20&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main id="app">
+  <header class="bar">
+    <h1>Tamers of <b>Vessara</b></h1>
+    <p class="keys" aria-label="Keyboard controls">
+      <span><kbd>Arrows</kbd> move</span>
+      <span><kbd>Z</kbd> / <kbd>Enter</kbd> confirm</span>
+      <span><kbd>X</kbd> / <kbd>Esc</kbd> back, hold to run</span>
+      <span><kbd>M</kbd> menu</span>
+    </p>
+  </header>
+  <div id="stage"><canvas id="game" width="480" height="320" aria-label="Tamers of Vessara game screen"></canvas></div>
+  <div id="pad" aria-label="Touch controls">
+    <div class="dpad">
+      <button type="button" id="pad-up" data-k="up" aria-label="Up"></button>
+      <button type="button" id="pad-left" data-k="left" aria-label="Left"></button>
+      <button type="button" id="pad-right" data-k="right" aria-label="Right"></button>
+      <button type="button" id="pad-down" data-k="down" aria-label="Down"></button>
+    </div>
+    <button type="button" id="pad-menu" class="pill" data-k="start">MENU</button>
+    <div class="ab">
+      <button type="button" id="pad-b" data-k="b">B</button>
+      <button type="button" id="pad-a" data-k="a">A</button>
+    </div>
+  </div>
+</main>
+<script src="js/core.js"></script>
+<script src="js/data/moves.js"></script>
+<script src="js/data/monsters.js"></script>
+<script src="js/data/items.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/data/world.js"></script>
+<script src="js/state.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/overworld.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
