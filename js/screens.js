@@ -76,16 +76,16 @@ function monRow(g, m, x, y, w, sel, badge) {
   panel(g, x + 6, y + 4, 36, 30, 'well', { fill: shade(TYPE_COLOR[d.types[0]], out ? -.5 : -.18) });
   g.globalAlpha = ga * (out ? .5 : 1); drawMon(g, m.id, x + 8, y + 3, 32); g.globalAlpha = ga;
   text(g, d.name, x + 48, y + 2, { font: 'd', size: 15, color: PAL.ink });
-  lvPill(g, m.lvl, x + w - 6, y + 3);
+  lvPill(g, m.lvl, x + w - 6, y + 3, true);
   bar(g, x + 48, y + 22, w - 108, 8, f, hpColor(f));
-  text(g, out ? 'Fainted' : m.hp + '/' + max, x + w - 8, y + 18, { size: 11, weight: 800, align: 'right', color: out ? PAL.coralLo : PAL.ink });
-  if (m.status && !out) statusChip(g, m.status, x + w - 84, y + 4);
-  else if (evoReady(m)) icon(g, 'up', x + w - 60, y + 7, 1);
+  text(g, out ? 'Fainted' : m.hp + '/' + max, x + w - 7, y + 18, { size: 10, weight: 800, align: 'right', color: out ? PAL.coralLo : PAL.ink });
+  if (m.status && !out) statusChip(g, m.status, x + w - 78, y + 3);
+  else if (evoReady(m)) icon(g, 'up', x + w - 56, y + 6, 1);
   if (badge) tag(g, badge, x + 2, y - 2, badge === 'LEAD' ? PAL.gold : PAL.coral, badge === 'LEAD' ? PAL.night : '#fff');
 }
-function lvPill(g, lvl, xr, y) {
-  const str = 'Lv ' + lvl, w = Math.ceil(textW(g, str, 11, { weight: 800 })) + 12;
-  rrect(g, xr - w, y, w, 16, 2, PAL.indigo); text(g, str, xr - 6, y + 1, { size: 11, weight: 800, color: PAL.parch, align: 'right' });
+function lvPill(g, lvl, xr, y, small) {
+  const size = small ? 10 : 11, str = 'Lv ' + lvl, w = Math.ceil(textW(g, str, size, { weight: 800 })) + (small ? 10 : 12);
+  rrect(g, xr - w, y, w, small ? 14 : 16, 2, PAL.indigo); text(g, str, xr - (small ? 5 : 6), y + (small ? 0 : 1), { size, weight: 800, color: PAL.parch, align: 'right' });
 }
 function emptySlot(g, x, y, w, h) {
   g.fillStyle = PAL.night2; g.fillRect(x + 2, y + 2, w - 4, h - 4);
@@ -314,9 +314,9 @@ function mapScreen() {
       g.fillStyle = PAL.night; g.fillRect(mx - 2, my - 2, 396, 224);
       g.drawImage(World.mini, mx, my, 392, 220);
       for (const t of MAPS.world.towns) {
-        const x = mx + t.x * sc, y = my + t.y * sc, w = Math.ceil(textW(g, t.name, 11, { font: 'd' })) + 8;
-        g.fillStyle = 'rgba(23,22,41,.8)'; g.fillRect(Math.round(x - w / 2), y - 21, w, 14);
-        text(g, t.name, x, y - 22, { font: 'd', size: 11, align: 'center', color: PAL.parch });
+        const x = mx + t.x * sc, y = my + t.y * sc, w = Math.ceil(textW(g, t.name, 11, { font: 'd' })) + 8, lx = clamp(x, mx + w / 2, mx + 392 - w / 2);
+        g.fillStyle = 'rgba(23,22,41,.8)'; g.fillRect(Math.round(lx - w / 2), y - 21, w, 14);
+        text(g, t.name, lx, y - 22, { font: 'd', size: 11, align: 'center', color: PAL.parch });
         g.fillStyle = PAL.night; g.fillRect(x - 2, y - 6, 4, 12); g.fillRect(x - 6, y - 2, 12, 4); g.fillRect(x - 4, y - 4, 8, 8);
         g.fillStyle = PAL.gold; g.fillRect(x - 2, y - 4, 4, 8); g.fillRect(x - 4, y - 2, 8, 4); g.fillStyle = PAL.goldHi; g.fillRect(x - 2, y - 2, 2, 2);
       }
