@@ -58,7 +58,8 @@ function monCard(g, m, x, y, w, h, o) {
   panel(g, x + 8, y + 8, 68, h - 16, 'well', { fill: shade(TYPE_COLOR[d.types[0]], out ? -.5 : -.18) });
   const bob = o.sel && !out ? Math.round(Math.sin(Game.t / 240)) * 2 : 0;
   g.globalAlpha = ga * (out ? .5 : 1); drawMon(g, m.id, x + 10, y + 8 + (h - 16 - 64) / 2 + bob, 64); g.globalAlpha = ga;
-  text(g, d.name, x + 84, y + (d.name.length > 10 ? 7 : 5), { font: 'd', size: d.name.length > 10 ? 14 : 17, color: PAL.ink, track: .3 });
+  const big = textW(g, d.name, 17, { font: 'd', track: .3 }) <= w - 142; // long names step down a size to clear the level pill
+  text(g, d.name, x + 84, y + (big ? 5 : 7), { font: 'd', size: big ? 17 : 14, color: PAL.ink, track: .3 });
   lvPill(g, m.lvl, x + w - 8, y + 6);
   d.types.forEach((t, i) => typeChip(g, t, x + 84 + i * 56, y + 27));
   bar(g, x + 84, y + 47, w - 94, 10, f, hpColor(f));
