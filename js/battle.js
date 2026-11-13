@@ -313,7 +313,7 @@ const Battle = {
     const blink = k => v[k] > Game.t && Math.floor(Game.t / 55) % 2;
     if (v.foeShow > 0.02 && !blink('foeBlink')) { g.globalAlpha = v.foeShow; drawMon(g, v.foe.mon.id, 330 + v.foeDX, 14 + (1 - v.foeShow) * 14, 128); g.globalAlpha = 1; }
     if (v.meShow > 0.02 && !blink('meBlink')) { g.globalAlpha = v.meShow; drawMon(g, v.me.mon.id, 40 + v.meDX, 96 + (1 - v.meShow) * 14, 128, true); g.globalAlpha = 1; }
-    if (v.charm) { g.save(); g.translate(v.charm.x + 16, v.charm.y + 32); g.rotate(v.charm.rock * 0.35); g.drawImage(objSprite('orb'), -16, -32, 32, 32); g.restore(); }
+    if (v.charm) { g.save(); g.translate(v.charm.x + 16, v.charm.y + 32); g.rotate(v.charm.rock * 0.35); g.drawImage(objSprite('charm'), -16, -32, 32, 32); g.restore(); }
     // foe panel
     const hud = (b, x, y, mine) => {
       const m = b.mon, max = statOf(m, 'hp'), shown = mine ? v.meHp : v.foeHp;

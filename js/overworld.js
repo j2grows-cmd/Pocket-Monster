@@ -18,7 +18,10 @@ const World = {
   },
   checkBanner(force) {
     const n = this.placeName();
-    if (n && (n !== this.lastName || force)) { this.lastName = n; this.banner = { text: n, t: 2200 }; }
+    if (!n || (n === this.lastName && !force)) return;
+    const m = this.map, c = m.cellAt(this.x, this.y);
+    const sub = m.interior ? c.name : c.kind === 'town' ? c.tag : c.kind === 'area' ? 'Wild area' : 'Route';
+    this.lastName = n; this.banner = { text: n, sub, t: 2800, life: 2800 };
   },
   visible(n) {
     if (n.hideFlag && S.flags[n.hideFlag]) return false;
@@ -48,7 +51,7 @@ const World = {
     if (Game.busy) return;
     Game.busy = true;
     try { await fn(); } catch (e) { console.error(e); }
-    Msg.hide(); Game.busy = false;
+    Msg.hide(); Msg.ctx = null; Game.busy = false;
   },
 
   onStep() {
@@ -57,7 +60,7 @@ const World = {
     if (warp) { this.run(async () => { await fadeOut(); this.enter(warp.map, warp.x, warp.y, warp.dir); await fadeIn(); }); return; }
     this.checkBanner();
     const spotter = this.map.npcs.find(n => n.kind === 'trainer' && n.sight > 0 && !S.flags[n.flag] && this.visible(n) && this.sees(n));
-    if (spotter) { this.run(async () => { this.bubble = spotter; await wait(550); this.bubble = null; await Scripts.trainer(spotter); }); return; }
+    if (spotter) { Msg.ctx = spotter; this.run(async () => { this.bubble = spotter; await wait(550); this.bubble = null; await Scripts.trainer(spotter); }); return; }
     if (S.ward > 0) { S.ward--; if (S.ward === 0) this.run(async () => { await say('The Ward Incense has burned out.'); }); return; }
     const t = this.tile(this.x, this.y), cell = this.map.cellAt(this.x, this.y);
     if (t >= T.TALL && t < T.TALL + 10 && cell && cell.enc && firstAlive() >= 0 && R.chance(0.115)) {
@@ -83,7 +86,7 @@ const World = {
     const [dx, dy] = DIRS[this.dir], fx = this.x + dx, fy = this.y + dy, ft = this.tile(fx, fy);
     let n = this.npcAt(fx, fy);
     if (!n && ft === T.COUNTER) n = this.npcAt(fx + dx, fy + dy);
-    if (n) { if (n.pal && !(n.kind === 'trainer' && n.sight > 0 && !S.flags[n.flag])) n.dir = OPP[this.dir]; this.run(() => Scripts[n.kind](n)); return; }
+    if (n) { if (n.pal && !(n.kind === 'trainer' && n.sight > 0 && !S.flags[n.flag])) n.dir = OPP[this.dir]; Msg.ctx = n; this.run(() => Scripts[n.kind](n)); return; }
     const sign = this.map.signs[fx + ',' + fy];
     if (sign) { this.run(() => say(sign)); return; }
     if (ft === T.WATER) { this.run(fish); return; }
@@ -96,53 +99,106 @@ const World = {
     for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
       const t = m.tiles[y * m.w + x], B = BIOMES[m.biomeAt(x, y)];
       let col = B.g;
-      if (t === T.PATH || t === T.BRIDGE) col = '#e6c88c'; else if (t === T.WATER) col = '#3f8fe0'; else if (t === T.LAVA) col = '#e8562a'; else if (t === T.SAND) col = '#ecd9a0';
-      else if (t >= T.OBST && t < T.OBST + 10) col = shade(B.g, -.38); else if (t >= T.TALL && t < T.TALL + 10) col = shade(B.g, -.14);
-      else if ((t >= T.WALL && t <= T.EMB_L && t !== T.BRIDGE && t !== T.LAVA) || (t >= T.EAVE && t < T.EAVE + 10)) col = '#b8503a';
+      if (t === T.PATH || t === T.BRIDGE) col = '#ecd9a3'; else if (t === T.WATER) col = '#4a90d6'; else if (t === T.LAVA) col = '#db665a'; else if (t === T.SAND) col = '#f1e2b4';
+      else if (t >= T.OBST && t < T.OBST + 10) col = shade(B.g, (x + y) % 2 ? -.42 : -.36); else if (t >= T.TALL && t < T.TALL + 10) col = shade(B.g, -.14);
+      else if (isBuilding(t)) col = '#a8453f';
       g.fillStyle = col; g.fillRect(x, y, 1, 1);
     }
     this.mini = c;
   },
 
+  /* Ground first, then everything that stands up (scenery, people, monsters) sorted by depth,
+     then weather, light and the vignette. */
   draw(g) {
     if (!this.buf) this.buf = makeCanvas(VW, VH);
-    const b = this.buf.getContext('2d'), m = this.map; b.imageSmoothingEnabled = false;
-    b.fillStyle = '#14121c'; b.fillRect(0, 0, VW, VH);
+    const b = this.buf.getContext('2d'), m = this.map, t = Game.t; b.imageSmoothingEnabled = false;
+    b.fillStyle = PAL.night; b.fillRect(0, 0, VW, VH);
     const [dx, dy] = DIRS[this.dir], p = this.moving ? this.prog : 1;
     const ppx = this.moving ? (this.fx + dx * p) * TS : this.x * TS, ppy = this.moving ? (this.fy + dy * p) * TS : this.y * TS;
-    const mw = m.w * TS, mh = m.h * TS;
-    const camX = Math.round(mw <= VW ? (mw - VW) / 2 : clamp(ppx + 16 - VW / 2, 0, mw - VW));
-    const camY = Math.round(mh <= VH ? (mh - VH) / 2 : clamp(ppy + 16 - VH / 2, 0, mh - VH));
-    const fr = Math.floor(Game.t / 450) % 2;
+    const mw = m.w * TS, mh = m.h * TS, even = v => Math.round(v / 2) * 2;
+    const camX = even(mw <= VW ? (mw - VW) / 2 : clamp(ppx + 16 - VW / 2, 0, mw - VW));
+    const camY = even(mh <= VH ? (mh - VH) / 2 : clamp(ppy + 16 - VH / 2, 0, mh - VH));
+    const wf = Math.floor(t / 300), sf = Math.floor(t / 560);
     const x0 = Math.max(0, Math.floor(camX / TS)), y0 = Math.max(0, Math.floor(camY / TS));
-    const x1 = Math.min(m.w - 1, Math.floor((camX + VW) / TS)), y1 = Math.min(m.h - 1, Math.floor((camY + VH) / TS));
+    const x1 = Math.min(m.w - 1, Math.floor((camX + VW) / TS)), y1 = Math.min(m.h - 1, Math.floor((camY + VH) / TS) + 1);
+    const tl = (x, y) => x < 0 || y < 0 || x >= m.w || y >= m.h ? 0 : m.tiles[y * m.w + x];
+    const soft = n => (n >= 20 && n < 50) || n === T.FLOWER || n === T.FENCE || n === T.SIGN;
+    const ents = [], lights = [];
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
       const id = m.tiles[ty * m.w + tx]; if (!id) continue;
-      b.drawImage(Sprites.tile(id, m.biomeAt(tx, ty), fr), tx * TS - camX, ty * TS - camY, TS, TS);
+      const bio = m.biomeAt(tx, ty), sx = tx * TS - camX, sy = ty * TS - camY;
+      let h = (Math.imul(tx, 374761393) + Math.imul(ty, 668265263)) >>> 0; h = (Math.imul(h ^ (h >>> 13), 1274126177) >>> 0) >>> 8;
+      let v = h & 3, fr = 0;
+      if (id === T.WATER || id === T.LAVA) { fr = wf; v = h & 1; }
+      else if ((id >= 40 && id < 50) || id === T.FLOWER) fr = sf + tx + ty; // the sway rolls across a field
+      else if (id === T.HEARTH) fr = wf;
+      else if (isBuilding(id)) { v = (isBuilding(tl(tx - 1, ty)) ? 0 : 1) | (isBuilding(tl(tx + 1, ty)) ? 0 : 2); if (ROOF_COL[id] && !v && h % 3 === 0) v = 4; }
+      b.drawImage(Sprites.tile(id, bio, fr, v), sx, sy, TS, TS);
+      if (id === T.PATH) {
+        const mask = (soft(tl(tx, ty - 1)) ? 1 : 0) | (soft(tl(tx + 1, ty)) ? 2 : 0) | (soft(tl(tx, ty + 1)) ? 4 : 0) | (soft(tl(tx - 1, ty)) ? 8 : 0);
+        if (mask) b.drawImage(Sprites.edge('path', mask, bio, 0), sx, sy, TS, TS);
+      } else if (id === T.WATER) {
+        const land = n => n !== T.WATER && n !== T.BRIDGE && n !== 0;
+        const mask = (land(tl(tx, ty - 1)) ? 1 : 0) | (land(tl(tx + 1, ty)) ? 2 : 0) | (land(tl(tx, ty + 1)) ? 4 : 0) | (land(tl(tx - 1, ty)) ? 8 : 0);
+        if (mask) b.drawImage(Sprites.edge('shore', mask, bio, wf), sx, sy, TS, TS);
+      } else if (id >= 30 && id < 40) ents.push({ prop: 1, x: tx, y: ty, key: ty, bio, v });
+      else if (id === T.WINDOW) lights.push(sx, sy);
+      if (!isBuilding(id) && isBuilding(tl(tx, ty - 1))) { b.fillStyle = 'rgba(23,22,41,.24)'; b.fillRect(sx, sy, TS, 6); } // buildings sit on the ground
     }
-    const ents = [];
-    for (const n of m.npcs) { if (n.x < x0 - 2 || n.x > x1 + 2 || n.y < y0 - 2 || n.y > y1 + 2 || !this.visible(n)) continue; ents.push(n); }
-    ents.push({ player: 1, y: this.moving ? this.fy + dy * p : this.y });
-    ents.sort((a, c) => a.y - c.y);
+    for (const n of m.npcs) { if (n.x < x0 - 2 || n.x > x1 + 2 || n.y < y0 - 2 || n.y > y1 + 2 || !this.visible(n)) continue; n.key = n.y + .5; ents.push(n); }
+    ents.push({ player: 1, key: (this.moving ? this.fy + dy * p : this.y) + .5 });
+    ents.sort((a, c) => a.key - c.key);
+    const shadow = (sx, sy, w) => { b.fillStyle = 'rgba(23,22,41,.26)'; b.fillRect(sx + 16 - w / 2, sy + 24, w, 6); b.fillRect(sx + 14 - w / 2, sy + 26, w + 4, 2); };
     for (const n of ents) {
+      if (n.prop) {
+        const sx = n.x * TS - camX, sy = n.y * TS - camY;
+        shadow(sx, sy + 2, 24); b.drawImage(Sprites.prop(n.bio, n.v), sx - 6, sy - 26, 44, 60);
+        continue;
+      }
       if (n.player) {
-        const f = this.moving ? 1 + (Math.floor(p * 2) + this.stepN) % 2 : 0;
-        b.drawImage(Sprites.char('hero', this.dir, f), Math.round(ppx - camX), Math.round(ppy - camY - 8), TS, TS);
+        const px = even(ppx - camX), py = even(ppy - camY);
+        const f = this.moving ? 1 + (Math.floor(p * 2) + this.stepN) % 2 : (Math.floor(t / 700) % 2 ? 3 : 0);
+        shadow(px, py, 16); b.drawImage(Sprites.char('hero', this.dir, f), px - 2, py - 14, 36, 44);
+        // wading through tall grass: the front blades cover your feet
+        const tids = this.moving ? [[this.fx, this.fy], [this.x, this.y]] : [[this.x, this.y]];
+        for (const [gx, gy] of tids) { const id = tl(gx, gy); if (id >= 40 && id < 50) b.drawImage(Sprites.tallFront(m.biomeAt(gx, gy), (sf + gx + gy) % 2), gx * TS - camX, gy * TS - camY, TS, TS); }
         continue;
       }
       const sx = n.x * TS - camX, sy = n.y * TS - camY;
-      if (n.mon) { const big = n.kind === 'legend', bob = Math.round(Math.sin(Game.t / 400 + n.x) * 2); if (big) b.drawImage(Sprites.mon(n.mon), sx - 24, sy - 46 + bob, 80, 80); else b.drawImage(Sprites.mon(n.mon), sx - 8, sy - 26 + bob, 48, 48); }
-      else if (n.obj) b.drawImage(objSprite(n.obj), sx, sy - (n.obj === 'item' ? 2 : 4), TS, TS);
-      else b.drawImage(Sprites.char(n.pal, n.dir, 0), sx, sy - 8, TS, TS);
-      if (this.bubble === n) { b.fillStyle = '#fff'; b.fillRect(sx + 8, sy - 34, 16, 22); b.fillStyle = UIC.accent; b.fillRect(sx + 14, sy - 30, 4, 10); b.fillRect(sx + 14, sy - 18, 4, 4); }
+      if (n.mon) {
+        const big = n.kind === 'legend', bob = Math.round(Math.sin(t / 400 + n.x)) * 2, s = big ? 96 : 64;
+        shadow(sx, sy, big ? 36 : 20); b.drawImage(Sprites.icon(n.mon), sx + 16 - s / 2, sy + 28 - s + bob, s, s);
+        if (big) for (let i = 0; i < 4; i++) { const a = t / 900 + i * 1.57; b.fillStyle = Math.floor(t / 200 + i) % 3 ? PAL.goldHi : PAL.white; b.fillRect(even(sx + 15 + Math.cos(a) * 34), even(sy - 16 + Math.sin(a) * 22), 2, 2); }
+      } else if (n.obj) {
+        if (n.obj === 'item') { shadow(sx, sy - 2, 14); b.drawImage(objSprite('item'), sx, sy - 2, TS, TS); const k = Math.floor(t / 220 + n.x) % 6; if (k < 2) { b.fillStyle = PAL.white; b.fillRect(sx + 22, sy + 4 - k * 2, 2, 2); b.fillRect(sx + 6, sy + 12 - k * 2, 2, 2); } }
+        else b.drawImage(objSprite(n.obj), sx, sy - 4, TS, TS);
+      } else {
+        shadow(sx, sy, 16);
+        b.drawImage(Sprites.char(n.pal, n.dir, Math.floor((t + n.x * 137 + n.y * 59) / 800) % 2 ? 3 : 0), sx - 2, sy - 14, 36, 44);
+      }
+      if (this.bubble === n) { const by = sy - 40 - Math.abs(Math.round(Math.sin(t / 90) * 2)) * 2; rrect(b, sx + 6, by, 20, 22, 2, PAL.night); rrect(b, sx + 8, by + 2, 16, 18, 2, PAL.parch); b.fillStyle = PAL.coral; b.fillRect(sx + 14, by + 4, 4, 8); b.fillRect(sx + 14, by + 14, 4, 4); b.fillStyle = PAL.night; b.fillRect(sx + 12, by + 22, 4, 2); }
     }
+    if (!m.interior) {
+      const L = Scenery.light(), bio = m.biomeAt(this.x, this.y);
+      Scenery.ambient(b, bio, camX, camY, L.night);
+      if (L.r < 255 || L.b < 255) { b.globalCompositeOperation = 'multiply'; b.fillStyle = 'rgb(' + L.r + ',' + L.g + ',' + L.b + ')'; b.fillRect(0, 0, VW, VH); b.globalCompositeOperation = 'source-over'; }
+      if (L.night > .05) { // windows light up after dark
+        for (let i = 0; i < lights.length; i += 2) { const sx = lights[i], sy = lights[i + 1]; b.fillStyle = 'rgba(255,217,138,' + (L.night * .9) + ')'; b.fillRect(sx + 8, sy + 6, 16, 14); b.fillStyle = 'rgba(255,196,110,' + (L.night * .14) + ')'; b.fillRect(sx - 4, sy - 4, 40, 38); b.fillRect(sx + 2, sy + 2, 28, 34); }
+      }
+    }
+    b.drawImage(Scenery.vignette(), 0, 0, VW, VH);
     g.drawImage(this.buf, 0, 0, VW, VH);
     if (this.banner) {
-      const a = Math.min(1, this.banner.t / 300); setFont(g, 16, true);
-      const w = g.measureText(this.banner.text).width + 32;
-      g.globalAlpha = a; box(g, 8, 8, w, 34); text(g, this.banner.text, 24, 16, { bold: true }); g.globalAlpha = 1;
+      const bn = this.banner, age = bn.life - bn.t, a = Math.min(1, age / 220, bn.t / 300), ease = 1 - (1 - a) * (1 - a);
+      const w = Math.ceil(Math.max(textW(g, bn.text, 16, { font: 'd', track: .5 }), bn.sub ? textW(g, bn.sub, 11) : 0)) + 46, h = bn.sub ? 42 : 30, y = Math.round(-h + (h + 8) * ease);
+      g.globalAlpha = Math.min(1, a * 1.5);
+      panel(g, 8, y, w, h, 'dark'); g.fillStyle = PAL.gold; g.fillRect(12, y + 4, 4, h - 8);
+      icon(g, 'pin', 20, y + 7, 2);
+      text(g, bn.text, 40, y + 4, { font: 'd', size: 16, color: PAL.parch, track: .5 });
+      if (bn.sub) text(g, bn.sub, 40, y + 23, { size: 11, color: PAL.lav });
+      g.globalAlpha = 1;
     }
-    if (S.ward > 0) text(g, 'Ward ' + S.ward, VW - 10, 8, { align: 'right', size: 12, color: '#fff', shadow: '#000' });
+    if (S.ward > 0) { const s = 'WARD ' + S.ward, w = Math.ceil(textW(g, s, 9, { font: 'd', track: 1 })) + 10; tag(g, s, VW - w - 8, 8, PAL.lavLo); }
   },
 };
 
@@ -266,16 +322,3 @@ const Scripts = {
 };
 function newGameSpawn() { const h = CELLS['0,4']; return { map: 'world', x: h.c * CW + 4, y: h.r * CH + 9 }; }
 
-async function pauseMenu() {
-  let start = 0;
-  for (;;) {
-    const r = await choose(['Journal', 'Team', 'Bag', 'Map', 'Save', 'Close'], { x: VW - 126, y: 8, w: 118, start });
-    if (r < 0 || r === 5) return;
-    start = r;
-    if (r === 0) await journalScreen();
-    if (r === 1) { if (S.party.length) await teamScreen({ mode: 'menu' }); else { await say('You have no monsters yet.'); Msg.hide(); } }
-    if (r === 2) { const out = await bagScreen({ mode: 'field' }); if (out === 'close') return; }
-    if (r === 3) await mapScreen();
-    if (r === 4) { const ok = saveGame(); await say(ok ? 'Game saved.' : 'Saved for this session only. This browser is blocking storage.'); Msg.hide(); }
-  }
-}

@@ -1,10 +1,6 @@
 'use strict';
-/* Canvas, main loop, input, tweens and the small UI toolkit everything else is built on. */
-const FONT = '"Jersey 20", "Trebuchet MS", Verdana, sans-serif';
-let FONT_SCALE = 1; // the pixel face runs small, so it is scaled up once it has loaded
-const UIC = { paper: '#f8f1dc', paper2: '#eadfbe', ink: '#2b2540', soft: '#7a7090', accent: '#d8483a', gold: '#e0a82e', good: '#4caf50', warn: '#e6bd22', bad: '#d8483a' };
-
-const Game = { canvas: null, g: null, scale: 1, scene: 'title', ui: [], tweens: [], timers: [], t: 0, busy: false, fadeA: 0, flash: 0 };
+/* Canvas, main loop, input, tweens, the dialogue box and the menu primitives. Drawing helpers live in ui.js. */
+const Game = { canvas: null, g: null, scale: 1, scene: 'title', ui: [], tweens: [], timers: [], t: 0, dt: 16, busy: false, fadeA: 0, flash: 0, compact: false };
 const Input = { held: {} };
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
@@ -28,60 +24,26 @@ function wait(ms) { return new Promise(res => Game.timers.push({ t: ms, res }));
 async function fadeOut(ms) { await tween(Game, 'fadeA', 1, ms || 160); }
 async function fadeIn(ms) { await tween(Game, 'fadeA', 0, ms || 160); }
 
-/* ---------- drawing helpers ---------- */
-function setFont(g, size) { g.font = Math.round(size * FONT_SCALE) + 'px ' + FONT; }
-function text(g, str, x, y, o) {
-  o = o || {};
-  setFont(g, o.size || 16, o.bold);
-  g.textAlign = o.align || 'left'; g.textBaseline = 'top';
-  if (o.shadow) { g.fillStyle = o.shadow; g.fillText(str, x + 1, y + 1); }
-  g.fillStyle = o.color || UIC.ink; g.fillText(str, x, y);
-}
-function wrap(g, str, maxW, size) {
-  setFont(g, size || 16);
-  const out = [];
-  for (const para of String(str).split('\n')) {
-    let lineStr = '';
-    for (const word of para.split(' ')) {
-      const test = lineStr ? lineStr + ' ' + word : word;
-      if (g.measureText(test).width > maxW && lineStr) { out.push(lineStr); lineStr = word; } else lineStr = test;
-    }
-    out.push(lineStr);
-  }
-  return out;
-}
-function box(g, x, y, w, h, o) {
-  o = o || {};
-  g.fillStyle = 'rgba(20,14,40,.35)'; g.fillRect(x + 3, y + 3, w, h);
-  g.fillStyle = UIC.ink; g.fillRect(x, y, w, h);
-  g.fillStyle = o.fill || UIC.paper; g.fillRect(x + 3, y + 3, w - 6, h - 6);
-  g.fillStyle = o.trim || UIC.paper2; g.fillRect(x + 3, y + h - 7, w - 6, 4);
-}
-function bar(g, x, y, w, h, frac, col) {
-  g.fillStyle = UIC.ink; g.fillRect(x, y, w, h);
-  g.fillStyle = '#5a5470'; g.fillRect(x + 1, y + 1, w - 2, h - 2);
-  g.fillStyle = col; g.fillRect(x + 1, y + 1, Math.max(0, Math.round((w - 2) * clamp(frac, 0, 1))), h - 2);
-}
-function hpColor(f) { return f > 0.5 ? UIC.good : f > 0.2 ? UIC.warn : UIC.bad; }
-function typeChip(g, type, x, y) {
-  g.fillStyle = UIC.ink; g.fillRect(x, y, 52, 16);
-  g.fillStyle = TYPE_COLOR[type]; g.fillRect(x + 1, y + 1, 50, 14);
-  text(g, type.toUpperCase(), x + 26, y + 2, { size: 11, bold: true, align: 'center', color: '#fff', shadow: 'rgba(0,0,0,.45)' });
-}
-function drawMon(g, id, x, y, size, flip, sil) {
-  g.drawImage(sil ? Sprites.silhouette(id) : flip ? Sprites.monFlip(id) : Sprites.mon(id), x, y, size, size);
-}
-
-/* ---------- message box ---------- */
+/* ---------- dialogue box ----------
+   Lines that start "Name: " get a name plate, and a portrait when we know the speaker's face. */
+const SPEAKERS = { 'Sage Maren': 'sage', 'Corvin': 'rival', 'Rival Corvin': 'rival', 'Road Warden': 'guard' };
 const Msg = {
-  visible: false, pages: [], page: 0, chars: 0, resolve: null, auto: 0, hold: 0,
+  visible: false, pages: [], page: 0, chars: 0, resolve: null, auto: 0, hold: 0, ctx: null, who: null, face: null,
+  layout(str) {
+    let who = null, face = null; const c = this.ctx;
+    const m = /^([A-Z][A-Za-z' ]{1,24}): /.exec(str);
+    if (m) { const pal = SPEAKERS[m[1]] || (c && c.name === m[1] && c.pal); if (pal) { who = m[1]; face = pal; str = str.slice(m[0].length); } }
+    else if (c && c.pal && (['talk', 'heal', 'shop', 'paddock'].includes(c.kind) || (c.kind === 'gift' && (str === c.text || str === c.after)))) face = c.pal;
+    this.who = who; this.face = face;
+    return wrap(Game.g, str, VW - 46 - (face ? 62 : 0), 14);
+  },
   say(str, auto) {
-    const g = Game.g; const lines = wrap(g, str, VW - 52, 16);
+    const lines = this.layout(str);
     this.pages = []; for (let i = 0; i < lines.length; i += 3) this.pages.push(lines.slice(i, i + 3));
     this.page = 0; this.chars = 0; this.visible = true; this.auto = auto || 0; this.hold = 0;
     return new Promise(res => { this.resolve = res; });
   },
-  set(str) { const lines = wrap(Game.g, str, VW - 52, 16); this.pages = [lines.slice(0, 3)]; this.page = 0; this.chars = 999; this.visible = true; this.resolve = null; },
+  set(str) { const lines = this.layout(str); this.pages = [lines.slice(0, 3)]; this.page = 0; this.chars = 999; this.visible = true; this.resolve = null; },
   total() { return this.pages[this.page].join('\n').length; },
   key(k) {
     if (k !== 'a' && k !== 'b') return;
@@ -100,10 +62,26 @@ const Msg = {
   hide() { this.visible = false; this.resolve = null; },
   draw(g) {
     if (!this.visible) return;
-    box(g, 6, VH - 88, VW - 12, 82);
+    const x = 6, y = VH - 84, w = VW - 12, h = 78;
+    panel(g, x, y, w, h, 'parch');
+    let tx = x + 18;
+    if (this.face) {
+      panel(g, x + 10, y + 10, 58, 58, 'well', { fill: PAL.indigo2 });
+      g.drawImage(Sprites.portrait(this.face), x + 15, y + 17, 48, 48);
+      tx = x + 80;
+    }
+    if (this.who) {
+      const nw = Math.ceil(textW(g, this.who, 13, { font: 'd', track: .5 })) + 20;
+      rrect(g, x + 10, y - 10, nw, 20, 2, PAL.night); g.fillStyle = PAL.indigo; g.fillRect(x + 12, y - 8, nw - 4, 16);
+      g.fillStyle = PAL.gold; g.fillRect(x + 12, y + 6, nw - 4, 2);
+      text(g, this.who, x + 20, y - 8, { font: 'd', size: 13, color: PAL.goldHi, track: .5 });
+    }
     let n = Math.floor(this.chars);
-    (this.pages[this.page] || []).forEach((ln, i) => { const s = ln.slice(0, Math.max(0, n)); n -= ln.length + 1; text(g, s, 22, VH - 76 + i * 21); });
-    if (this.resolve && !this.auto && this.chars >= this.total() && Math.floor(Game.t / 300) % 2) { g.fillStyle = UIC.accent; g.beginPath(); g.moveTo(VW - 30, VH - 26); g.lineTo(VW - 18, VH - 26); g.lineTo(VW - 24, VH - 18); g.fill(); }
+    (this.pages[this.page] || []).forEach((ln, i) => { const s = ln.slice(0, Math.max(0, n)); n -= ln.length + 1; text(g, s, tx, y + 11 + i * 19, { size: 14 }); });
+    if (this.resolve && !this.auto && this.chars >= this.total()) {
+      const by = y + h - 18 + (Math.floor(Game.t / 260) % 2) * 2;
+      g.fillStyle = PAL.coral; g.fillRect(x + w - 24, by, 10, 2); g.fillRect(x + w - 22, by + 2, 6, 2); g.fillRect(x + w - 20, by + 4, 2, 2);
+    }
   },
 };
 const say = (s, auto) => Msg.say(s, auto);
@@ -111,7 +89,7 @@ const say = (s, auto) => Msg.say(s, auto);
 /* ---------- layers ---------- */
 function layer(def) {
   return new Promise(res => {
-    const L = { draw: def.draw, update: def.update };
+    const L = { draw: def.draw, update: def.update, born: Game.t, anim: def.anim };
     const done = v => { const i = Game.ui.indexOf(L); if (i >= 0) Game.ui.splice(i, 1); res(v); };
     L.key = k => def.key && def.key(k, done);
     if (def.init) def.init(done);
@@ -119,61 +97,84 @@ function layer(def) {
   });
 }
 
-/* A vertical (or grid) list menu. Resolves to the chosen index, or -1 if cancelled. */
+/* A vertical (or grid) list menu. Resolves to the chosen index, or -1 if cancelled.
+   o.draw(g, st) replaces the default look while keeping the same keys (battle and title use it). */
 function choose(options, o) {
   o = o || {};
-  const cols = o.cols || 1, rowH = o.rowH || 24, maxRows = o.rows || 8;
-  const g = Game.g; setFont(g, 16);
+  const cols = o.cols || 1, rowH = o.rowH || 22, maxRows = o.rows || 8;
+  const g = Game.g; setFont(g, 14);
   const labelOf = v => typeof v === 'string' ? v : v.label;
   let w = o.w;
-  if (!w) { w = 0; for (const v of options) w = Math.max(w, g.measureText(labelOf(v)).width + (v.right ? g.measureText(v.right).width + 24 : 0)); w = (w + 44) * cols; }
+  if (!w) { w = 0; for (const v of options) w = Math.max(w, g.measureText(labelOf(v)).width + (v.right ? g.measureText(v.right).width + 24 : 0)); w = (w + 46) * cols; }
   const rowsTotal = Math.ceil(options.length / cols), rows = Math.min(maxRows, rowsTotal), h = rows * rowH + 20;
   const x = o.x !== undefined ? o.x : VW - w - 8, y = o.y !== undefined ? o.y : VH - 92 - h;
-  let sel = o.start || 0, top = 0;
-  const fix = () => { const r = Math.floor(sel / cols); if (r < top) top = r; if (r >= top + rows) top = r - rows + 1; if (o.onMove) o.onMove(sel); };
+  const st = { sel: o.start > 0 ? o.start : 0, top: 0, x, y, w, h, options, moved: Game.t };
+  const fix = () => { const r = Math.floor(st.sel / cols); if (r < st.top) st.top = r; if (r >= st.top + rows) st.top = r - rows + 1; if (o.onMove) o.onMove(st.sel); };
   fix();
   return layer({
+    anim: o.anim,
     draw(g) {
-      box(g, x, y, w, h);
-      const cw = (w - 16) / cols;
-      for (let i = top * cols; i < Math.min(options.length, (top + rows) * cols); i++) {
-        const v = options[i], cx = x + 10 + (i % cols) * cw, cy = y + 10 + (Math.floor(i / cols) - top) * rowH;
-        if (i === sel) { g.fillStyle = UIC.accent; g.beginPath(); g.moveTo(cx, cy + 3); g.lineTo(cx + 8, cy + 9); g.lineTo(cx, cy + 15); g.fill(); }
-        text(g, labelOf(v), cx + 14, cy, { color: v.disabled ? UIC.soft : UIC.ink, bold: i === sel });
-        if (v.right) text(g, v.right, cx + cw - 8, cy, { align: 'right', color: UIC.soft });
+      if (o.draw) return o.draw(g, st);
+      panel(g, x, y, w, h, 'parch');
+      const cw = (w - 20) / cols;
+      for (let i = st.top * cols; i < Math.min(options.length, (st.top + rows) * cols); i++) {
+        const v = options[i], cx = x + 10 + (i % cols) * cw, cy = y + 10 + (Math.floor(i / cols) - st.top) * rowH;
+        if (i === st.sel) { selRow(g, cx, cy - 2, cw, rowH - 2); cursor(g, cx + 8, cy + 3); }
+        text(g, labelOf(v), cx + 22, cy, { size: 14, weight: i === st.sel ? 800 : 700, color: v.disabled ? PAL.parch3 : PAL.ink });
+        if (v.right) text(g, v.right, cx + cw - 8, cy + 2, { align: 'right', size: 11, color: PAL.soft });
       }
-      if (rowsTotal > rows) { g.fillStyle = UIC.soft; if (top > 0) g.fillRect(x + w - 12, y + 8, 4, 4); if (top + rows < rowsTotal) g.fillRect(x + w - 12, y + h - 14, 4, 4); }
+      if (rowsTotal > rows) { g.fillStyle = PAL.goldLo; if (st.top > 0) g.fillRect(x + w - 14, y + 8, 4, 4); if (st.top + rows < rowsTotal) g.fillRect(x + w - 14, y + h - 14, 4, 4); }
     },
     key(k, done) {
-      const n = options.length;
-      if (k === 'up') sel = (sel - cols + n) % n; else if (k === 'down') sel = (sel + cols) % n;
-      else if (k === 'left' && cols > 1) sel = (sel - 1 + n) % n; else if (k === 'right' && cols > 1) sel = (sel + 1) % n;
-      else if (k === 'a') { if (!options[sel].disabled) return done(sel); }
+      const n = options.length, before = st.sel;
+      if (k === 'up') st.sel = (st.sel - cols + n) % n; else if (k === 'down') st.sel = (st.sel + cols) % n;
+      else if (k === 'left' && cols > 1) st.sel = (st.sel - 1 + n) % n; else if (k === 'right' && cols > 1) st.sel = (st.sel + 1) % n;
+      else if (k === 'a') { if (!options[st.sel].disabled) return done(st.sel); }
       else if (k === 'b' && o.cancel !== false) return done(-1);
-      if (sel >= n) sel = n - 1;
+      if (st.sel >= n) st.sel = n - 1;
+      if (st.sel !== before) st.moved = Game.t;
       fix();
     },
   });
 }
 async function confirmBox(question) {
   Msg.set(question);
-  const r = await choose(['Yes', 'No'], { w: 90 });
+  const r = await choose(['Yes', 'No'], { w: 96 });
   return r === 0;
 }
 
 /* ---------- boot / loop ---------- */
+/* Fit the 480x320 screen to the page. Whole-number scales keep every art pixel square, so we snap to one
+   whenever that costs little space, fall back to half steps, and only then stretch to fit exactly. */
 function resizeCanvas() {
-  const c = Game.canvas, stage = c.parentElement;
-  const availW = stage.clientWidth, availH = stage.clientHeight;
-  const cssW = Math.max(160, Math.floor(Math.min(availW, availH * VW / VH)));
-  const cssH = Math.floor(cssW * VH / VW);
-  c.style.width = cssW + 'px'; c.style.height = cssH + 'px';
+  const c = Game.canvas, stage = document.getElementById('stage');
+  const availW = stage.clientWidth - 20, availH = stage.clientHeight - 20;
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+  const exact = Math.max(0.5, Math.min(availW / VW, availH / VH) * dpr);
+  let k = Math.floor(exact);
+  if (k < 1 || k / exact < 0.86) { const half = Math.floor(exact * 2) / 2; k = half >= 1 && half / exact >= 0.86 ? half : exact; }
+  c.width = Math.round(VW * k); c.height = Math.round(VH * k);
+  c.style.width = (c.width / dpr) + 'px'; c.style.height = (c.height / dpr) + 'px';
   Game.scale = c.width / VW;
+  Game.compact = c.width / dpr < 430;
 }
+/* The page header mirrors where you are and how far you have come. */
+const HUD = {
+  key: '', next: 0,
+  sync() {
+    if (Game.t < this.next) return; this.next = Game.t + 300;
+    const on = !!(S && Game.scene !== 'title' && World.map);
+    const loc = on ? World.placeName() : 'Title screen';
+    const key = on ? [loc, S.name, sigilCount(), S.coins, caughtCount()].join('|') : 'title';
+    if (key === this.key) return; this.key = key;
+    const $ = id => document.getElementById(id); if (!$('hud-loc')) return;
+    $('hud-loc').textContent = loc;
+    $('hud-who').hidden = !on;
+    if (on) { $('hud-name').textContent = S.name; $('hud-sig').textContent = sigilCount() + '/8'; $('hud-coins').textContent = S.coins; $('hud-jr').textContent = caughtCount() + '/151'; }
+  },
+};
 function frame(now) {
-  const dt = Math.min(50, now - (Game.last || now)); Game.last = now; Game.t += dt;
+  const dt = Math.min(50, now - (Game.last || now)); Game.last = now; Game.t += dt; Game.dt = dt;
   if (S && Game.scene !== 'title') S.time += dt;
   for (let i = Game.tweens.length - 1; i >= 0; i--) {
     const tw = Game.tweens[i]; tw.t += dt; const p = Math.min(1, tw.t / tw.ms);
@@ -186,18 +187,24 @@ function frame(now) {
   if (Game.scene === 'world') World.update(dt);
   const g = Game.g;
   g.setTransform(Game.scale, 0, 0, Game.scale, 0, 0); g.imageSmoothingEnabled = false;
-  g.fillStyle = '#14121c'; g.fillRect(0, 0, VW, VH);
+  g.fillStyle = PAL.night; g.fillRect(0, 0, VW, VH);
   if (Game.scene === 'world') World.draw(g); else if (Game.scene === 'battle') Battle.draw(g); else if (Game.scene === 'title') Title.draw(g);
   Msg.draw(g);
-  for (const L of Game.ui) if (L.draw) L.draw(g);
+  for (const L of Game.ui) if (L.draw) {
+    // menus ease in: a short fade and an 8px rise
+    const a = L.born === undefined || L.anim === false ? 1 : clamp((Game.t - L.born) / 130, 0, 1);
+    g.save(); if (a < 1) { g.globalAlpha = a; g.translate(0, Math.round((1 - a) * 8)); }
+    L.draw(g); g.restore();
+  }
+  HUD.sync();
   if (Game.flash > 0) { g.fillStyle = 'rgba(255,255,255,' + Game.flash + ')'; g.fillRect(0, 0, VW, VH); }
-  if (Game.fadeA > 0) { g.fillStyle = 'rgba(12,10,20,' + Game.fadeA + ')'; g.fillRect(0, 0, VW, VH); }
+  if (Game.fadeA > 0) { g.fillStyle = 'rgba(23,22,41,' + Game.fadeA + ')'; g.fillRect(0, 0, VW, VH); }
   requestAnimationFrame(frame);
 }
 function bootEngine() {
   Game.canvas = document.getElementById('game'); Game.g = Game.canvas.getContext('2d');
   resizeCanvas(); window.addEventListener('resize', resizeCanvas);
-  if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(Game.canvas.parentElement);
+  if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(document.getElementById('stage'));
   window.addEventListener('keydown', e => {
     const k = KEYMAP[e.code]; if (!k) return;
     e.preventDefault(); press(k);

@@ -2,7 +2,7 @@
 /* Data and map sanity checks. Run with: node tools/check.js */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const root = path.join(__dirname, '..', 'js');
-const files = ['core.js', 'data/moves.js', 'data/monsters.js', 'data/items.js', 'sprites.js', 'data/world.js', 'state.js'];
+const files = ['core.js', 'data/moves.js', 'data/monsters.js', 'data/items.js', 'ui.js', 'sprites.js', 'data/world.js', 'state.js'];
 const ctx = vm.createContext({ console, localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} } });
 vm.runInContext(files.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n') +
   '\nbuildWorld(); this.X = { DEX, MOVES, CELLS, MAPS, WORLD, WARDENS, COUNCIL, LODGE_TRAINERS, ITEMS, T, isWalkable, CW, CH, HABITAT, baseFormOf, TYPES, TYPE_STRONG, TYPE_WEAK };', ctx);

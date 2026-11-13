@@ -186,13 +186,13 @@ const BODIES = {
   },
 };
 
-function paintMonster(art) {
-  const S = 64, cv = makeCanvas(S, S), g = cv.getContext('2d');
+function paintMonster(art, size) {
+  const S = size || 64, cv = makeCanvas(S, S), g = cv.getContext('2d');
   const B = BODIES[art.b], f = {};
   art.f.forEach(k => f[k] = 1);
   const o = { c: art.c, c2: art.c2, cd: shade(art.c, -.3), cl: shade(art.c, .5), f };
-  const k = 24 * art.s;
-  g.save(); g.translate(32, 60); g.scale(k, k);
+  const k = (S < 64 ? 25.5 : 24) * art.s * S / 64;
+  g.save(); g.translate(S / 2, S * 60 / 64); g.scale(k, k);
   const [hx, hy, hr] = B.head, [tx, ty] = B.tail, [wx, wy] = B.wing, [px, py] = B.top, [mx, my] = B.mouth;
   // ---- behind the body ----
   if (f.halo) { g.strokeStyle = shade(o.c2, .3); g.lineWidth = .08; g.beginPath(); g.arc(hx, hy - .05, hr + .34, 0, 7); g.stroke(); }
@@ -234,12 +234,6 @@ function paintMonster(art) {
   if (f.tu) { poly(g, [mx - .06, my - .02, mx - .2, my + .3, mx + .06, my + .04], BONE); poly(g, [mx + .2, my - .02, mx + .12, my + .28, mx + .32, my + .04], BONE); }
   if (f.fng) { poly(g, [mx - .04, my, mx + .02, my + .16, mx + .08, my], '#ffffff'); poly(g, [mx + .14, my, mx + .2, my + .16, mx + .26, my], '#ffffff'); }
   if (f.mk) { el(g, hx - .03, hy - .02, hr * .8, hr * .62, '#fbf7ee'); el(g, hx - .03, hy + hr * .5, hr * .3, hr * .12, o.c2); }
-  // soft volume shading clipped to the sprite
-  g.globalCompositeOperation = 'source-atop';
-  const gr = g.createLinearGradient(-.8, -1.6, .8, 0);
-  gr.addColorStop(0, 'rgba(255,255,255,.14)'); gr.addColorStop(.5, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(20,10,40,.3)');
-  g.fillStyle = gr; g.fillRect(-2, -3, 4, 4);
-  g.globalCompositeOperation = 'source-over';
   // ---- eyes ----
   const er = B.er || hr * .26, es = art.eye;
   const eyes = f.eye1 ? [[hx - .03, hy]] : B.eyes;
@@ -252,86 +246,180 @@ function paintMonster(art) {
     if (es === 'a') poly(g, [ex - r * 1.4, ey - r * .3, ex + r * 1.3, ey - r * 1.5, ex + r * 1.3, ey - r * .9, ex - r * 1.4, ey + r * .15], o.cd);
   }
   g.restore();
-  return pixelize(cv, INK);
+  return pixelize(cv, { depth: S >= 64 ? 3 : 1 });
 }
 
-/* Snap soft vector edges to hard pixels and add a one-pixel outline. */
-function pixelize(cv, ink) {
-  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+/* Snap soft vector edges to hard pixels, then finish the sprite the way a pixel artist would:
+   a lit rim top-left and a shaded rim bottom-right (o.depth pixels wide), and an outline that
+   takes its colour from the sprite itself instead of a flat black line. */
+function pixelize(cv, o) {
+  o = o || {};
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height, depth = o.depth || 0;
   const im = g.getImageData(0, 0, w, h), d = im.data, solid = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) { if (d[i * 4 + 3] >= 110) { solid[i] = 1; d[i * 4 + 3] = 255; } else d[i * 4 + 3] = 0; }
-  const [ir, ig, ib] = hexRgb(ink);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+  const at = (x, y) => x >= 0 && y >= 0 && x < w && y < h && solid[y * w + x];
+  if (depth) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (!solid[i]) continue;
+    const lit = !at(x - depth, y - depth), dark = !at(x + depth, y + depth) || !at(x, y + depth);
+    if (dark && !lit) { d[i * 4] = d[i * 4] * 0.74 + 5; d[i * 4 + 1] = d[i * 4 + 1] * 0.70 + 4; d[i * 4 + 2] = d[i * 4 + 2] * 0.80 + 12; }
+    else if (lit && !dark) { d[i * 4] += (255 - d[i * 4]) * 0.22; d[i * 4 + 1] += (255 - d[i * 4 + 1]) * 0.22; d[i * 4 + 2] += (255 - d[i * 4 + 2]) * 0.16; }
+  }
+  if (o.outline !== false) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x; if (solid[i]) continue;
-    if ((x > 0 && solid[i - 1]) || (x < w - 1 && solid[i + 1]) || (y > 0 && solid[i - w]) || (y < h - 1 && solid[i + w])) { d[i * 4] = ir; d[i * 4 + 1] = ig; d[i * 4 + 2] = ib; d[i * 4 + 3] = 255; }
+    const n = (y < h - 1 && solid[i + w]) ? i + w : (x > 0 && solid[i - 1]) ? i - 1 : (x < w - 1 && solid[i + 1]) ? i + 1 : (y > 0 && solid[i - w]) ? i - w : -1;
+    if (n < 0) continue;
+    d[i * 4] = d[n * 4] * 0.26 + 23 * 0.74; d[i * 4 + 1] = d[n * 4 + 1] * 0.24 + 22 * 0.76; d[i * 4 + 2] = d[n * 4 + 2] * 0.28 + 41 * 0.72; d[i * 4 + 3] = 255;
   }
   g.putImageData(im, 0, 0);
   return cv;
 }
+function tinted(src, col) {
+  const c = makeCanvas(src.width, src.height), g = c.getContext('2d');
+  g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
+  return c;
+}
 
 const Sprites = {
-  _mon: {}, _flip: {}, _sil: {}, _char: {}, _tile: new Map(),
+  _mon: {}, _flip: {}, _sil: {}, _white: {}, _icon: {}, _char: {}, _tile: new Map(), _edge: new Map(), _prop: {}, _misc: {},
   mon(id) { return this._mon[id] || (this._mon[id] = paintMonster(DEX[id].art)); },
+  icon(id) { return this._icon[id] || (this._icon[id] = paintMonster(DEX[id].art, 32)); },
   monFlip(id) {
     if (!this._flip[id]) { const s = this.mon(id), c = makeCanvas(64, 64), g = c.getContext('2d'); g.translate(64, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); this._flip[id] = c; }
     return this._flip[id];
   },
-  silhouette(id) {
-    if (!this._sil[id]) { const s = this.mon(id), c = makeCanvas(64, 64), g = c.getContext('2d'); g.drawImage(s, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#3a3350'; g.fillRect(0, 0, 64, 64); this._sil[id] = c; }
-    return this._sil[id];
-  },
+  silhouette(id) { return this._sil[id] || (this._sil[id] = tinted(this.mon(id), '#473f70')); },
+  white(id, flip) { const k = id + (flip ? 'f' : ''); return this._white[k] || (this._white[k] = tinted(flip ? this.monFlip(id) : this.mon(id), '#fff9ea')); },
   char(pal, dir, frame) {
     const key = pal + '|' + dir + '|' + frame;
     return this._char[key] || (this._char[key] = paintChar(CHAR_PALS[pal] || CHAR_PALS.hero, dir, frame));
   },
-  tile(id, biome, frame) {
-    const key = id * 64 + biome * 4 + (ANIMATED[id] ? frame : 0);
+  /* Head and shoulders, for the dialogue box. */
+  portrait(pal) {
+    const key = 'face|' + pal;
+    if (!this._char[key]) { const c = makeCanvas(16, 16); c.getContext('2d').drawImage(this.char(pal, 'down', 0), 1, 0, 16, 16, 0, 0, 16, 16); this._char[key] = c; }
+    return this._char[key];
+  },
+  tile(id, biome, frame, v) {
+    const n = animFrames(id), f = n > 1 ? (frame || 0) % n : 0; v = v || 0;
+    const key = ((id * 8 + biome) * 8 + f) * 16 + v;
     let t = this._tile.get(key);
-    if (!t) { t = paintTile(id, biome, ANIMATED[id] ? frame : 0); this._tile.set(key, t); }
+    if (!t) { t = paintTile(id, biome, f, v); this._tile.set(key, t); }
     return t;
   },
+  /* Soft borders where a path or water meets something else. mask: 1 N, 2 E, 4 S, 8 W. */
+  edge(kind, mask, biome, frame) {
+    const key = kind + '|' + mask + '|' + biome + '|' + (kind === 'shore' ? frame % 2 : 0);
+    let t = this._edge.get(key);
+    if (!t) { t = paintEdge(kind, mask, biome, frame % 2); this._edge.set(key, t); }
+    return t;
+  },
+  /* Trees, boulders and palms: taller than a tile, drawn in a second pass so they overlap. */
+  prop(biome, v) { const key = biome * 8 + v; return this._prop[key] || (this._prop[key] = paintProp(biome, v)); },
+  tallFront(biome, frame) { const key = 'tf' + biome + frame; return this._misc[key] || (this._misc[key] = paintTallFront(biome, frame)); },
 };
 
-/* ---------- Characters (16x16) ---------- */
+/* ---------- Characters (16x20 on an 18x22 canvas, drawn at 2x) ----------
+   [hair, skin, top, legs, style words, accent]. Styles: long cap hat hood band beard bald bun spiky scarf cape robe apron */
 const CHAR_PALS = {
-  hero: ['#3a2a22', '#f2c8a0', '#d8483a', '#2f3f6a'], rival: ['#c8c8d8', '#f2c8a0', '#3a3a5a', '#2a2a3a'],
-  sage: ['#e8e8e8', '#e8b890', '#f4f4f0', '#6a5a4a'], guard: ['#4a3a2a', '#e8b890', '#4a6a9a', '#3a4a6a'],
-  healer: ['#e87a9a', '#f2c8a0', '#f8f0f0', '#e8a0b0'], shop: ['#3a5a3a', '#e8b890', '#3f8fe0', '#4a4a4a'],
-  warden: ['#2a2a2a', '#e8b890', '#c8a03a', '#5a2a4a'], kid: ['#b0703a', '#f2c8a0', '#f2c83a', '#4a7a4a'],
-  lass: ['#d8a03a', '#f2c8a0', '#e86a9a', '#7a4a8a'], hiker: ['#6a4a2a', '#d8a880', '#7a9a4a', '#6a5a3a'],
-  angler: ['#3a4a5a', '#e8b890', '#5ab0d0', '#8a7a5a'], elder: ['#d0d0d0', '#d8a880', '#8a6a9a', '#4a4a5a'],
-  mystic: ['#6a3a8a', '#e8c8b0', '#4a3a7a', '#2a2a4a'], ranger: ['#2a4a2a', '#d8a880', '#3a7a4a', '#5a4a3a'],
-  stoker: ['#8a2a1a', '#d8a880', '#e8663a', '#3a3a3a'], sledder: ['#f0f0f0', '#f2c8a0', '#6fcfe0', '#3a5a8a'],
-  council: ['#1a1a2a', '#e8b890', '#8a1a3a', '#1a1a2a'], champ: ['#f2e08a', '#f2c8a0', '#f8f8ff', '#c8a03a'],
+  hero: ['#3b2a24', '#f2c8a0', '#db665a', '#2f3a66', 'band scarf', '#d9ad55'], rival: ['#cfd0de', '#f2c8a0', '#3a3a5e', '#25213d', 'spiky scarf', '#a89abf'],
+  sage: ['#ecebe4', '#e8b890', '#f5efe0', '#6a5a4a', 'beard robe', '#3f9a8c'], guard: ['#4a3a2a', '#e8b890', '#4f7fc0', '#33406a', 'cap', '#33406a'],
+  healer: ['#e88aa6', '#f2c8a0', '#db665a', '#e8a0b0', 'long apron', '#fff9ea'], shop: ['#3a5a3a', '#e8b890', '#4f7fc0', '#4a4458', 'cap apron', '#557d58'],
+  warden: ['#2b2540', '#e8b890', '#d9ad55', '#473f70', 'cape band', '#a8453f'], kid: ['#b0703a', '#f2c8a0', '#f1cf6a', '#557d58', 'cap', '#db665a'],
+  lass: ['#d9a441', '#f2c8a0', '#e8739a', '#7a4f8f', 'long', '#fff9ea'], hiker: ['#6a4a2a', '#d8a880', '#7f9a4c', '#6a5a3a', 'hat', '#b9834f'],
+  angler: ['#3a4a5a', '#e8b890', '#5ab0d0', '#8a7a5a', 'hat', '#e9d6a0'], elder: ['#d6d4cf', '#d8a880', '#8a6a9a', '#4a4458', 'bald beard', '#8a6a9a'],
+  mystic: ['#6a3a8a', '#e8c8b0', '#5a4688', '#2b2540', 'hood robe', '#473f70'], ranger: ['#2a4a2a', '#d8a880', '#557d58', '#5a4a3a', 'cap', '#3b6b45'],
+  stoker: ['#8a2a1a', '#d8a880', '#db665a', '#3b3440', 'band', '#f1cf6a'], sledder: ['#f0f0f0', '#f2c8a0', '#6fcfe0', '#3a5a8a', 'hood', '#eaf6fb'],
+  council: ['#1e1b35', '#e8b890', '#8a2a44', '#1e1b35', 'hood robe', '#25213d'], champ: ['#f1d98a', '#f2c8a0', '#fff9ea', '#c8a03a', 'long cape', '#d9ad55'],
 };
 function paintChar(pal, dir, frame) {
-  const cv = makeCanvas(16, 16), g = cv.getContext('2d');
-  const [hair, skin, shirt, pants] = pal, p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
-  // legs
-  const l0 = frame === 1 ? 2 : 3, l1 = frame === 2 ? 2 : 3;
-  p(5, 12, 2, l0, pants); p(9, 12, 2, l1, pants);
-  // body + arms
-  p(4, 8, 8, 5, shirt); p(3, 8, 1, 3, shirt); p(12, 8, 1, 3, shirt); p(3, 11, 1, 1, skin); p(12, 11, 1, 1, skin);
-  p(4, 12, 8, 1, shade(shirt, -.25));
-  // head
-  p(4, 2, 8, 6, skin); p(4, 1, 8, 2, hair); p(3, 2, 1, 4, hair); p(12, 2, 1, 4, hair);
-  if (dir === 'down') { p(4, 3, 8, 1, hair); p(6, 5, 1, 2, INK); p(9, 5, 1, 2, INK); }
-  else if (dir === 'up') { p(4, 2, 8, 5, hair); }
-  else if (dir === 'left') { p(6, 3, 6, 1, hair); p(9, 4, 3, 3, hair); p(5, 5, 1, 2, INK); }
-  else { p(4, 3, 6, 1, hair); p(4, 4, 3, 3, hair); p(10, 5, 1, 2, INK); }
-  return pixelize(cv, INK);
+  if (dir === 'right') { // mirror of the left-facing sprite
+    const src = paintChar(pal, 'left', frame), c = makeCanvas(18, 22), cg = c.getContext('2d');
+    cg.translate(18, 0); cg.scale(-1, 1); cg.drawImage(src, 0, 0); return c;
+  }
+  const cv = makeCanvas(18, 22), g = cv.getContext('2d');
+  const [hair, skin, top, legs, styles, acc] = pal, st = {}; (styles || '').split(' ').forEach(k => st[k] = 1);
+  const hairD = shade(hair, -.28), hairL = shade(hair, .3), skinD = shade(skin, -.16), topD = shade(top, -.24), topL = shade(top, .2), legD = shade(legs, -.25), accD = shade(acc, -.25), accL = shade(acc, .25);
+  const shoe = '#3b3046', blush = '#eba58c';
+  const bob = frame === 3 ? 1 : 0;
+  const p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x + 1, y + 1, w, h); };
+  const b = (x, y, w, h, c) => p(x, y + bob, w, h, c); // everything above the knees breathes
+  const side = dir === 'left';
+  // ---- legs ----
+  if (st.robe) { p(side ? 5 : 4, 16, side ? 6 : 8, 3, top); p(side ? 5 : 4, 18, side ? 6 : 8, 1, topD); p(side ? 5 : 5, 19, 2, 1, shoe); p(9, 19, 2, 1, shoe); }
+  else if (!side) {
+    const up0 = frame === 1 ? 1 : 0, up1 = frame === 2 ? 1 : 0;
+    p(5, 16 + bob, 2, 3 - up0 - bob, legs); p(4, 19 - up0, 3, 1, shoe); p(6, 16 + bob, 1, 3 - up0 - bob, legD);
+    p(9, 16 + bob, 2, 3 - up1 - bob, legs); p(9, 19 - up1, 3, 1, shoe); p(10, 16 + bob, 1, 3 - up1 - bob, legD);
+  } else if (frame === 1) { p(5, 16, 2, 3, legs); p(4, 19, 3, 1, shoe); p(9, 16, 2, 2, legD); p(9, 18, 3, 1, shoe); }
+  else { p(6, 16 + bob, 4, 3 - bob, legs); p(8, 16 + bob, 2, 3 - bob, legD); p(5, 19, 5, 1, shoe); }
+  // ---- cape behind ----
+  if (st.cape) { if (dir === 'up') b(3, 10, 10, 8, acc); else if (side) b(10, 10, 2, 8, acc); else { b(2, 10, 2, 8, acc); b(12, 10, 2, 8, acc); } }
+  // ---- torso and arms ----
+  if (!side) {
+    b(4, 10, 8, 6, top); b(10, 10, 2, 6, topD); b(4, 10, 2, 1, topL);
+    b(3, 10, 1, 4, top); b(12, 10, 1, 4, topD); b(3, 14, 1, 1, skin); b(12, 14, 1, 1, skinD);
+    if (!st.robe) b(4, 15, 8, 1, legD);
+    if (dir === 'down') { b(7, 10, 2, 1, skinD); if (st.apron) { b(6, 11, 4, 5, acc); b(6, 15, 4, 1, accD); } }
+    if (dir === 'up' && st.cape) { b(3, 10, 10, 7, acc); b(3, 16, 10, 1, accD); b(7, 11, 2, 6, accD); }
+  } else {
+    b(5, 10, 6, 6, top); b(9, 10, 2, 6, topD); if (!st.robe) b(5, 15, 6, 1, legD);
+    const ax = frame === 1 ? 5 : 7; b(ax, 11, 2, 3, topD); b(ax, 14, 2, 1, skin);
+    if (st.apron) b(5, 11, 1, 5, acc);
+  }
+  if (st.scarf) { if (side) { b(5, 10, 6, 1, acc); b(10, 11, 2, 3, accD); } else if (dir === 'up') { b(4, 10, 8, 1, acc); b(8, 11, 2, 3, accD); } else { b(4, 10, 8, 1, acc); b(10, 11, 2, 3, accD); } }
+  // ---- head ----
+  if (dir === 'down') {
+    b(4, 4, 8, 5, skin); b(5, 9, 6, 1, skinD); b(3, 7, 1, 1, skin); b(12, 7, 1, 1, skin);
+    b(5, 1, 6, 1, hair); b(4, 2, 8, 2, hair); b(3, 3, 1, 4, hair); b(12, 3, 1, 4, hairD); b(4, 4, 3, 1, hair); b(9, 4, 3, 1, hair); b(6, 2, 3, 1, hairL);
+    if (st.bald) { b(5, 1, 6, 1, skin); b(4, 2, 8, 3, skin); b(6, 2, 2, 1, '#fff2dc'); }
+    b(6, 6, 1, 2, INK); b(9, 6, 1, 2, INK); b(5, 8, 1, 1, blush); b(10, 8, 1, 1, blush);
+    if (st.long) { b(3, 3, 1, 8, hair); b(12, 3, 1, 8, hairD); b(4, 9, 1, 2, hair); b(11, 9, 1, 2, hairD); }
+    if (st.beard) { b(4, 8, 8, 1, hair); b(5, 9, 6, 2, hair); b(7, 8, 2, 1, skinD); }
+    if (st.band) b(4, 3, 8, 1, acc);
+    if (st.cap) { b(5, 0, 6, 1, acc); b(4, 1, 8, 3, acc); b(3, 4, 10, 1, accD); b(5, 1, 3, 1, accL); }
+    if (st.hat) { b(5, 0, 6, 3, acc); b(5, 0, 2, 1, accL); b(2, 3, 12, 1, accD); b(5, 2, 6, 1, accD); }
+    if (st.hood) { b(4, 0, 8, 1, acc); b(3, 1, 10, 2, acc); b(2, 3, 2, 7, acc); b(12, 3, 2, 7, accD); b(4, 3, 8, 1, acc); b(4, 1, 3, 1, accL); b(4, 9, 1, 1, acc); b(11, 9, 1, 1, accD); }
+  } else if (dir === 'up') {
+    b(5, 1, 6, 1, hair); b(4, 2, 8, 7, hair); b(3, 3, 1, 5, hair); b(12, 3, 1, 5, hairD); b(4, 7, 8, 2, hairD); b(5, 9, 6, 1, skinD); b(6, 2, 3, 1, hairL);
+    if (st.bald) { b(5, 1, 6, 1, skin); b(4, 2, 8, 3, skin); }
+    if (st.long) { b(3, 3, 1, 8, hair); b(12, 3, 1, 8, hairD); b(4, 9, 8, 3, hair); b(4, 11, 8, 1, hairD); }
+    if (st.band) b(4, 3, 8, 1, acc);
+    if (st.cap) { b(5, 0, 6, 1, acc); b(4, 1, 8, 3, acc); b(5, 1, 3, 1, accL); }
+    if (st.hat) { b(5, 0, 6, 3, acc); b(2, 3, 12, 1, accD); b(5, 2, 6, 1, accD); }
+    if (st.hood) { b(4, 0, 8, 1, acc); b(3, 1, 10, 9, acc); b(2, 3, 12, 6, acc); b(11, 3, 3, 6, accD); b(4, 1, 3, 1, accL); }
+  } else {
+    b(4, 4, 5, 5, skin); b(3, 6, 1, 1, skin); b(5, 9, 4, 1, skinD);
+    b(5, 1, 6, 1, hair); b(4, 2, 8, 2, hair); b(8, 4, 5, 4, hair); b(12, 3, 1, 5, hairD); b(9, 7, 3, 1, hairD); b(4, 4, 3, 1, hair); b(6, 2, 3, 1, hairL);
+    if (st.bald) { b(5, 1, 5, 1, skin); b(4, 2, 6, 3, skin); }
+    b(5, 6, 1, 2, INK); b(6, 8, 1, 1, blush);
+    if (st.long) { b(9, 4, 4, 8, hair); b(11, 5, 2, 7, hairD); }
+    if (st.beard) { b(4, 8, 5, 2, hair); }
+    if (st.band) b(4, 3, 9, 1, acc);
+    if (st.cap) { b(5, 0, 6, 1, acc); b(4, 1, 9, 3, acc); b(2, 4, 6, 1, accD); b(5, 1, 3, 1, accL); }
+    if (st.hat) { b(5, 0, 6, 3, acc); b(2, 3, 12, 1, accD); b(5, 2, 6, 1, accD); }
+    if (st.hood) { b(4, 0, 8, 1, acc); b(4, 1, 10, 3, acc); b(8, 4, 6, 6, acc); b(11, 4, 3, 6, accD); b(4, 1, 3, 1, accL); b(4, 9, 5, 1, accD); }
+  }
+  if (st.bun) { b(6, 0, 4, 1, hair); b(7, -1, 2, 1, hair); }
+  if (st.spiky) { b(5, 0, 1, 1, hair); b(7, 0, 2, 1, hair); b(10, 0, 1, 1, hair); }
+  return pixelize(cv);
 }
 function paintObject(kind) {
   const cv = makeCanvas(16, 16), g = cv.getContext('2d'), p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
-  if (kind === 'item') { p(5, 7, 6, 6, '#e8c040'); p(4, 8, 8, 4, '#e8c040'); p(6, 8, 2, 2, '#fff4b0'); p(4, 10, 8, 1, '#a07818'); }
-  else if (kind === 'barrier') { p(1, 6, 14, 3, '#b0803a'); p(1, 11, 14, 3, '#b0803a'); p(3, 4, 2, 12, '#7a5424'); p(11, 4, 2, 12, '#7a5424'); p(1, 6, 14, 1, '#d0a058'); p(1, 11, 14, 1, '#d0a058'); }
-  else if (kind === 'orb') { p(5, 6, 6, 8, '#d8483a'); p(4, 7, 8, 6, '#d8483a'); p(4, 10, 8, 1, INK); p(4, 11, 8, 2, '#f4f0e8'); p(5, 13, 6, 1, '#f4f0e8'); p(7, 9, 2, 3, '#f4f0e8'); }
-  return pixelize(cv, INK);
+  if (kind === 'item') { // a small banded chest
+    p(3, 7, 10, 7, '#b9834f'); p(3, 5, 10, 3, '#d9ad55'); p(4, 5, 8, 1, '#f3d68f'); p(3, 8, 10, 1, '#7a5433'); p(3, 13, 10, 1, '#7a5433'); p(11, 9, 2, 4, '#9c6b3e'); p(7, 8, 2, 3, '#f3d68f'); p(7, 10, 2, 1, '#9c7636');
+  } else if (kind === 'barrier') {
+    p(1, 6, 14, 3, '#b98f58'); p(1, 11, 14, 3, '#b98f58'); p(3, 4, 2, 12, '#8a6238'); p(11, 4, 2, 12, '#8a6238'); p(1, 6, 14, 1, '#d6b47c'); p(1, 11, 14, 1, '#d6b47c'); p(3, 4, 2, 1, '#d6b47c'); p(11, 4, 2, 1, '#d6b47c'); p(4, 5, 1, 11, '#6b4a2a'); p(12, 5, 1, 11, '#6b4a2a');
+  } else if (kind === 'charm') { // a gold amulet on a loop
+    p(6, 1, 4, 1, '#9c7636'); p(5, 2, 1, 2, '#9c7636'); p(10, 2, 1, 2, '#9c7636');
+    p(7, 4, 2, 1, '#d9ad55'); p(6, 5, 4, 1, '#d9ad55'); p(5, 6, 6, 2, '#d9ad55'); p(4, 8, 8, 2, '#d9ad55'); p(5, 10, 6, 2, '#d9ad55'); p(6, 12, 4, 1, '#d9ad55'); p(7, 13, 2, 1, '#d9ad55');
+    p(6, 6, 2, 2, '#f3d68f'); p(5, 8, 1, 1, '#f3d68f'); p(9, 9, 3, 2, '#9c7636'); p(8, 11, 3, 1, '#9c7636'); p(7, 8, 2, 2, '#db665a'); p(7, 8, 1, 1, '#ee8f80');
+  }
+  return pixelize(cv);
 }
 const OBJ_SPRITES = {};
 function objSprite(kind) { return OBJ_SPRITES[kind] || (OBJ_SPRITES[kind] = paintObject(kind)); }
 
-/* ---------- Tiles (16x16) ---------- */
+/* ---------- Tiles (16x16, drawn at 2x) ---------- */
 const T = {
   VOID: 0, PATH: 1, WATER: 2, SAND: 3, FLOWER: 4, FENCE: 5, SIGN: 6, WALL: 7, DOOR: 8,
   ROOF: 9, ROOF_H: 10, ROOF_T: 11, ROOF_L: 12, WINDOW: 13, BRIDGE: 14, LAVA: 15, ROOF_S: 16,
@@ -339,111 +427,210 @@ const T = {
   FLOOR: 50, IWALL: 51, COUNTER: 52, MAT: 53, TABLE: 54, SHELF: 55, BED: 56, POT: 57, RUG: 58, HEARTH: 59, STONE: 60, PEDESTAL: 61, STATUE: 62, CRATE: 64,
   EAVE: 70, // + (roof id - 9)
 };
+function animFrames(id) { return id === 2 || id === 15 ? 4 : id === 59 || id === 4 || (id >= 40 && id < 50) ? 2 : 1; }
 const ANIMATED = { 2: 1, 15: 1, 59: 1 };
 const BIOMES = [
-  { name: 'meadow', g: '#7cc45c', g2: '#6ab34e', g3: '#90d46c', tall: '#3f9a45' },
-  { name: 'mountain', g: '#b9ad8c', g2: '#a89c7c', g3: '#cabd9c', tall: '#8f9a48' },
-  { name: 'volcanic', g: '#5e5458', g2: '#51484c', g3: '#6e6368', tall: '#b04a32' },
-  { name: 'darkwood', g: '#4f7a52', g2: '#456e48', g3: '#5c8c5e', tall: '#2a6244' },
-  { name: 'snow', g: '#eaf2f6', g2: '#d8e6ee', g3: '#ffffff', tall: '#9ccad8' },
-  { name: 'coast', g: '#ecd9a0', g2: '#dcc88c', g3: '#f6e8b8', tall: '#7fb04a' },
+  { name: 'meadow', g: '#79b860', g2: '#68a653', g3: '#90cc74', tall: '#3f8a48', path: '#dcc08a', tree: '#3c8548' },
+  { name: 'mountain', g: '#b8a987', g2: '#a69877', g3: '#cbbd9b', tall: '#8a9450', path: '#dbcba6', tree: '#5d7a4a' },
+  { name: 'volcanic', g: '#584c54', g2: '#4a4048', g3: '#6a5d66', tall: '#a8473a', path: '#85736c', tree: '#3a3238' },
+  { name: 'darkwood', g: '#4b7355', g2: '#40664b', g3: '#598566', tall: '#285c45', path: '#b39a6c', tree: '#234f3c' },
+  { name: 'snow', g: '#e6eef4', g2: '#d2e0ea', g3: '#f9fdff', tall: '#98c4d4', path: '#b7c7d6', tree: '#2f6a58' },
+  { name: 'coast', g: '#e9d6a0', g2: '#d9c48a', g3: '#f5e8bc', tall: '#7aa850', path: '#c9a06c', tree: '#3d9a4a' },
 ];
 function isWalkable(t) {
   return t === T.PATH || t === T.SAND || t === T.FLOWER || t === T.BRIDGE || t === T.DOOR || (t >= 20 && t < 30) || (t >= 40 && t < 50) || t === T.FLOOR || t === T.MAT || t === T.RUG || t === T.STONE;
 }
-function paintTile(id, biome, frame) {
+const isBuilding = t => (t >= 7 && t <= 13) || (t >= 16 && t <= 19) || (t >= 70 && t < 80);
+const ROOF_COL = { 9: '#b5674a', 10: '#db665a', 11: '#4f7fc0', 12: '#d9ad55', 16: '#3f9a8c' };
+
+function tallBlades(p, B, frame, rows) {
+  const t = B.tall, tD = shade(t, -.24), tL = shade(t, .3), base = shade(B.g, -.24);
+  for (const j of rows) for (let i = 0; i < 4; i++) {
+    const x = i * 4 + (j ? 2 : 0) - 1, y = j * 8 + 1, s = frame && (i + j) % 2 ? 1 : 0;
+    p(x, y + 7, 4, 1, base);
+    p(x, y + 3, 1, 5, tD); p(x + 1 + s, y, 1, 3, t); p(x + 1, y + 2, 1, 6, t); p(x + 2, y + 2, 1, 6, t); p(x + 3, y + 4, 1, 4, tD);
+    p(x + 1 + s, y, 1, 2, tL); p(x + 2, y + 2, 1, 1, tL);
+  }
+}
+function paintTallFront(biome, frame) {
   const cv = makeCanvas(16, 16), g = cv.getContext('2d'), B = BIOMES[biome] || BIOMES[0];
-  const rng = mulberry32(id * 131 + biome * 17 + 5);
+  tallBlades((x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); }, B, frame, [1]);
+  return cv;
+}
+function paintTile(id, biome, frame, v) {
+  const cv = makeCanvas(16, 16), g = cv.getContext('2d'), B = BIOMES[biome] || BIOMES[0];
+  const rng = mulberry32(id * 131 + biome * 17 + v * 53 + 5);
   const p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+  const pw = (x, y, w, h, c) => { x = ((x % 16) + 16) % 16; p(x, y, w, h, c); if (x + w > 16) p(x - 16, y, w, h, c); };
   const speck = (n, cols) => { for (let i = 0; i < n; i++) p(Math.floor(rng() * 16), Math.floor(rng() * 16), 1, 1, cols[i % cols.length]); };
-  const ground = () => { p(0, 0, 16, 16, B.g); speck(14, [B.g2, B.g3]); if (biome === 0 || biome === 3) { for (let i = 0; i < 4; i++) { const x = Math.floor(rng() * 14), y = 2 + Math.floor(rng() * 12); p(x, y, 1, 2, B.g2); p(x + 1, y + 1, 1, 1, B.g2); } } };
-  const floor = () => { p(0, 0, 16, 16, '#c89a62'); for (let y = 0; y < 16; y += 4) { p(0, y + 3, 16, 1, '#a87c48'); p((y * 3) % 16, y, 1, 3, '#a87c48'); } };
-  const roofCol = { 9: '#b8643a', 10: '#d8483a', 11: '#3f78c8', 12: '#c8a03a', 16: '#3aa08a' };
-  const kind = id >= 70 && id < 80 ? 'eave' : id >= 40 && id < 50 ? 'tall' : id >= 30 && id < 40 ? 'obst' : id >= 20 && id < 30 ? 'ground' : id;
+  const ground = () => {
+    p(0, 0, 16, 16, B.g); speck(9, [B.g2, B.g2, B.g3]);
+    if (biome === 0 || biome === 3) {
+      for (let i = 0; i < [1, 3, 0, 2][v & 3]; i++) { const x = 1 + Math.floor(rng() * 12), y = 2 + Math.floor(rng() * 10); p(x, y + 1, 1, 2, B.g2); p(x + 1, y, 1, 3, B.g2); p(x + 2, y + 1, 1, 2, B.g2); p(x + 1, y, 1, 1, B.g3); }
+      if ((v & 3) === 2) { p(10, 5, 1, 1, biome ? '#b9a3d6' : '#fbf6ea'); p(4, 11, 1, 1, biome ? '#8fcaa0' : '#f1cf6a'); }
+    } else if (biome === 1) { if (v & 1) { p(4, 9, 3, 2, '#9a8d70'); p(4, 9, 2, 1, '#d8ccae'); } if (v & 2) { p(11, 4, 2, 2, '#9a8d70'); p(11, 4, 1, 1, '#d8ccae'); } }
+    else if (biome === 2) { if (v & 1) { p(3, 5, 4, 1, '#3c3238'); p(6, 6, 1, 3, '#3c3238'); } if ((v & 3) === 2) { p(9, 10, 2, 1, '#c8553a'); p(10, 11, 1, 1, '#f1a04a'); } }
+    else if (biome === 4) { if (v & 1) { p(5, 6, 1, 1, '#ffffff'); p(11, 10, 1, 1, '#ffffff'); } if (v & 2) { p(3, 11, 6, 1, B.g2); p(9, 4, 4, 1, B.g2); } }
+    else if (biome === 5) { if ((v & 3) === 1) { p(6, 9, 2, 1, '#fbf3e4'); p(6, 10, 1, 1, '#e3a9a0'); } if ((v & 3) === 3) { p(10, 5, 3, 1, B.g2); p(4, 12, 4, 1, B.g2); } }
+  };
+  const floor = () => { p(0, 0, 16, 16, '#c9a06a'); for (let y = 0; y < 16; y += 4) { p(0, y + 3, 16, 1, '#a87e4a'); p((y * 5 + 3) % 16, y, 1, 3, '#a87e4a'); p((y * 7 + 9) % 16, y + 1, 2, 1, '#d6b07c'); } };
+  const wall = () => {
+    p(0, 0, 16, 16, '#efe3c8'); for (let y = 5; y < 12; y += 3) p(0, y, 16, 1, '#e2d4b4');
+    p(0, 0, 16, 2, '#b9a888'); p(0, 12, 16, 4, '#9a917e'); p(0, 12, 16, 1, '#b8b09c'); p(0, 15, 16, 1, '#7e7666');
+    for (let x = 3; x < 16; x += 6) p(x, 13, 1, 2, '#7e7666');
+    if (v & 1) { p(0, 0, 2, 12, '#7a5a3c'); p(2, 0, 1, 12, '#5f452d'); }
+    if (v & 2) { p(14, 0, 2, 12, '#7a5a3c'); p(13, 0, 1, 12, '#5f452d'); }
+  };
+  const shingles = (c, rows) => {
+    const d = shade(c, -.2), dd = shade(c, -.42), l = shade(c, .22);
+    p(0, 0, 16, 16, c);
+    for (let y = 0; y < rows; y += 4) { p(0, y + 3, 16, 1, d); for (let x = (y % 8 ? 4 : 0); x < 16; x += 8) p(x, y, 1, 3, d); for (let x = (y % 8 ? 0 : 4); x < 16; x += 8) p(x + 1, y, 2, 1, l); }
+    if (v & 1) { p(0, 0, 1, 16, dd); p(1, 0, 1, 16, l); }
+    if (v & 2) { p(15, 0, 1, 16, dd); p(14, 0, 1, 16, d); }
+    return [d, dd, l];
+  };
+  const plaque = (bg, ic) => { p(3, 1, 10, 11, '#5f452d'); p(4, 2, 8, 9, bg); p(4, 2, 8, 1, shade(bg, .25)); icon(g, ic, 4, 3, 1); p(7, 0, 2, 1, '#5f452d'); };
+  const kind = id >= 70 && id < 80 ? 'eave' : id >= 40 && id < 50 ? 'tall' : id >= 30 && id < 40 ? 'ground' : id >= 20 && id < 30 ? 'ground' : id;
   switch (kind) {
     case 'ground': ground(); break;
-    case 'tall': {
-      ground();
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) {
-        const x = i * 4 + (j % 2) * 2, y = j * 8 + 2;
-        p(x, y + 2, 1, 5, B.tall); p(x + 1, y, 1, 7, B.tall); p(x + 2, y + 3, 1, 4, shade(B.tall, -.2)); p(x + 1, y, 1, 1, shade(B.tall, .35));
-      }
+    case 'tall': ground(); tallBlades(p, B, frame, [0, 1]); break;
+    case T.PATH: {
+      const c = B.path; p(0, 0, 16, 16, c); speck(11, [shade(c, -.1), shade(c, .12), shade(c, -.1)]);
+      if ((v & 3) === 1) { p(4, 6, 2, 1, shade(c, -.2)); p(4, 5, 2, 1, shade(c, .2)); } if ((v & 3) === 2) { p(10, 10, 3, 1, shade(c, -.16)); p(3, 12, 2, 1, shade(c, -.16)); }
       break;
     }
-    case 'obst': {
-      ground();
-      if (biome === 1 || biome === 2) { // boulders
-        const c = biome === 1 ? '#8a8072' : '#3c3438';
-        p(2, 5, 12, 9, c); p(4, 3, 8, 2, c); p(1, 8, 14, 5, c); p(4, 4, 5, 2, shade(c, .25)); p(2, 6, 3, 2, shade(c, .25)); p(3, 12, 11, 2, shade(c, -.3)); p(11, 6, 3, 6, shade(c, -.18));
-        if (biome === 2) { p(6, 7, 1, 4, '#e8663a'); p(7, 10, 3, 1, '#e8663a'); p(9, 8, 1, 2, '#f7a23e'); }
-      } else if (biome === 5) { // palm
-        p(7, 7, 2, 9, '#8a6a3a'); p(8, 9, 1, 6, '#6a4e26');
-        const f = '#3d9a4a'; p(2, 3, 12, 2, f); p(1, 5, 4, 2, f); p(11, 5, 4, 2, f); p(5, 1, 6, 2, f); p(6, 5, 4, 2, shade(f, -.25)); p(0, 7, 2, 2, f); p(14, 7, 2, 2, f); p(5, 2, 3, 1, shade(f, .3));
-      } else { // trees
-        const c = biome === 3 ? '#1f4a34' : biome === 4 ? '#2f6a58' : '#2f7a3a';
-        p(7, 12, 2, 4, '#6a4a2a');
-        p(6, 0, 4, 2, c); p(4, 2, 8, 3, c); p(2, 5, 12, 4, c); p(1, 9, 14, 3, c); p(3, 12, 10, 1, shade(c, -.3));
-        p(5, 3, 3, 1, shade(c, .25)); p(3, 6, 4, 1, shade(c, .25)); p(2, 10, 5, 1, shade(c, .25)); p(10, 7, 3, 4, shade(c, -.2));
-        if (biome === 4) { p(6, 0, 4, 1, '#fff'); p(4, 2, 6, 1, '#fff'); p(2, 5, 9, 1, '#fff'); p(1, 9, 8, 1, '#fff'); }
-      }
-      break;
-    }
-    case T.PATH: p(0, 0, 16, 16, '#dcbc80'); speck(16, ['#c8a86c', '#ecd09a']); break;
-    case T.SAND: p(0, 0, 16, 16, '#ecd9a0'); speck(12, ['#dcc88c', '#f6e8b8']); break;
+    case T.SAND: p(0, 0, 16, 16, '#ecd9a3'); speck(10, ['#dcc88c', '#f6e9bd']); if (v & 1) { p(5, 9, 2, 1, '#fbf3e4'); p(5, 10, 1, 1, '#e3a9a0'); } if (v & 2) p(9, 4, 4, 1, '#dcc88c'); break;
     case T.WATER: {
-      p(0, 0, 16, 16, '#3f8fe0'); const o = frame ? 4 : 0;
-      for (let y = 2; y < 16; y += 6) { p((o + y) % 16, y, 5, 1, '#7fbcf4'); p((o + y + 9) % 16, y + 3, 4, 1, '#2f78c8'); }
+      p(0, 0, 16, 16, '#4a90d6'); const o = frame * 2 + v * 5;
+      for (let y = 1; y < 16; y += 5) { pw(o + y * 3, y, 5, 1, '#86c1ee'); pw(o + y * 3 + 1, y + 1, 3, 1, '#69aee6'); pw(o + y * 3 + 9, y + 2, 4, 1, '#3a78be'); }
+      if ((frame + v) % 4 === 0) { p(11, 7, 1, 1, '#eaf8ff'); p(3, 12, 1, 1, '#eaf8ff'); }
       break;
     }
     case T.LAVA: {
-      p(0, 0, 16, 16, '#e8562a'); const o = frame ? 5 : 0;
-      for (let y = 1; y < 16; y += 5) { p((o + y * 2) % 16, y, 4, 2, '#f7b23e'); p((o + y * 2 + 8) % 16, y + 2, 3, 1, '#b8321a'); }
+      p(0, 0, 16, 16, '#d9512c'); const o = frame * 2 + v * 5;
+      for (let y = 1; y < 16; y += 5) { pw(o + y * 2, y, 4, 2, '#f1a04a'); pw(o + y * 2 + 1, y, 2, 1, '#f9d77a'); pw(o + y * 2 + 8, y + 2, 4, 1, '#a8351f'); }
+      if ((frame + v) % 2) p(12, 6, 2, 2, '#f9d77a');
       break;
     }
     case T.FLOWER: {
-      ground(); const cols = ['#f25a7a', '#f7e06a', '#f4f4ff'];
-      [[3, 3], [10, 5], [6, 11], [13, 12]].forEach(([x, y], i) => { p(x, y, 2, 2, cols[i % 3]); p(x, y + 2, 1, 2, '#3f8a3f'); });
+      ground(); const cols = ['#e8736a', '#f1cf6a', '#fbf6ea', '#b9a3d6'];
+      [[3, 3], [10, 5], [6, 11], [13, 12]].forEach(([x, y], i) => { if ((v + i) % 4 === 3) return; const s = frame && i % 2 ? 1 : 0, c = cols[(i + v) % 4]; p(x, y + 2, 1, 2, '#3f8a48'); p(x + s, y, 2, 2, c); p(x + s, y, 1, 1, shade(c, .3)); });
       break;
     }
-    case T.FENCE: ground(); p(0, 5, 16, 2, '#b08a56'); p(0, 10, 16, 2, '#b08a56'); p(2, 2, 3, 12, '#8a6636'); p(11, 2, 3, 12, '#8a6636'); p(2, 2, 3, 1, '#c8a46c'); p(11, 2, 3, 1, '#c8a46c'); break;
-    case T.SIGN: ground(); p(7, 9, 2, 7, '#7a5a30'); p(2, 2, 12, 8, '#c89a5a'); p(2, 2, 12, 1, '#e8c080'); p(2, 9, 12, 1, '#8a6636'); p(4, 4, 8, 1, '#6a4a24'); p(4, 6, 6, 1, '#6a4a24'); break;
-    case T.WALL: case T.WINDOW: case T.EMB_H: case T.EMB_T: case T.EMB_L: {
-      p(0, 0, 16, 16, '#eadcc0'); for (let y = 3; y < 16; y += 4) p(0, y, 16, 1, '#d2c2a0'); p(0, 14, 16, 2, '#9a8a70');
-      if (id === T.WINDOW) { p(4, 3, 8, 8, '#5a4a3a'); p(5, 4, 6, 6, '#9fd4f4'); p(8, 4, 1, 6, '#5a4a3a'); p(5, 7, 6, 1, '#5a4a3a'); }
-      if (id === T.EMB_H) { p(3, 2, 10, 10, '#f8f0f0'); p(7, 3, 2, 8, '#d8483a'); p(4, 6, 8, 2, '#d8483a'); p(6, 4, 4, 6, '#f08a2c'); p(7, 6, 2, 4, '#fbe36a'); }
-      if (id === T.EMB_T) { p(3, 2, 10, 10, '#f0f4f8'); p(5, 4, 6, 6, '#e8c040'); p(4, 5, 8, 4, '#e8c040'); p(7, 5, 2, 4, '#a07818'); }
-      if (id === T.EMB_L) { p(3, 2, 10, 10, '#3a2a4a'); p(7, 3, 2, 8, '#e8c040'); p(4, 6, 8, 2, '#e8c040'); p(5, 4, 6, 6, '#e8c040'); p(7, 6, 2, 2, '#3a2a4a'); }
+    case T.FENCE:
+      ground(); p(1, 14, 14, 1, shade(B.g, -.22));
+      p(0, 6, 16, 2, '#b98f58'); p(0, 10, 16, 2, '#b98f58'); p(0, 6, 16, 1, '#d6b47c'); p(0, 10, 16, 1, '#d6b47c');
+      p(2, 3, 3, 11, '#8a6238'); p(11, 3, 3, 11, '#8a6238'); p(2, 3, 3, 1, '#d6b47c'); p(11, 3, 3, 1, '#d6b47c'); p(4, 4, 1, 10, '#6b4a2a'); p(13, 4, 1, 10, '#6b4a2a');
       break;
-    }
-    case T.DOOR: p(0, 0, 16, 16, '#eadcc0'); p(2, 1, 12, 15, '#6a4a2a'); p(3, 2, 10, 14, '#8a5e34'); p(3, 2, 10, 1, '#a87844'); p(11, 9, 1, 2, '#e8c040'); p(0, 14, 2, 2, '#9a8a70'); p(14, 14, 2, 2, '#9a8a70'); break;
+    case T.SIGN:
+      ground(); p(4, 14, 9, 1, shade(B.g, -.22)); p(7, 10, 2, 5, '#7a5433');
+      p(2, 2, 12, 8, '#c79a5e'); p(2, 2, 12, 1, '#e6c487'); p(2, 9, 12, 1, '#8a6238'); p(2, 2, 1, 8, '#a87c48'); p(13, 2, 1, 8, '#a87c48'); p(4, 4, 8, 1, '#6b4a2a'); p(4, 6, 6, 1, '#6b4a2a');
+      break;
+    case T.WALL: wall(); break;
+    case T.WINDOW:
+      wall(); p(3, 2, 10, 9, '#6b4a34'); p(4, 3, 8, 7, '#8fc8e8'); p(4, 3, 8, 2, '#c4e6f6'); p(8, 3, 1, 7, '#6b4a34'); p(4, 6, 8, 1, '#6b4a34');
+      p(2, 10, 12, 2, '#8a6238'); p(2, 10, 12, 1, '#b98f58'); p(3, 9, 2, 1, '#5fa35a'); p(6, 9, 2, 1, '#e8736a'); p(9, 9, 2, 1, '#5fa35a'); p(11, 9, 2, 1, '#f1cf6a');
+      break;
+    case T.EMB_H: wall(); plaque('#db665a', 'flame'); break;
+    case T.EMB_T: wall(); plaque('#33406a', 'coin'); break;
+    case T.EMB_L: wall(); plaque('#25213d', 'sigil'); break;
+    case T.DOOR:
+      wall(); p(2, 1, 12, 15, '#5f452d'); p(3, 2, 10, 14, '#96673c'); p(3, 2, 10, 1, '#b98654'); p(8, 3, 1, 13, '#7a5433'); p(4, 4, 3, 4, '#845a32'); p(9, 4, 3, 4, '#845a32'); p(4, 10, 3, 4, '#845a32'); p(9, 10, 3, 4, '#845a32');
+      p(10, 9, 1, 2, '#f3d68f'); p(1, 15, 14, 1, '#b8b09c');
+      break;
     case T.ROOF: case T.ROOF_H: case T.ROOF_T: case T.ROOF_L: case T.ROOF_S: {
-      const c = roofCol[id]; p(0, 0, 16, 16, c);
-      for (let y = 0; y < 16; y += 4) { p(0, y + 3, 16, 1, shade(c, -.25)); for (let x = (y % 8 ? 4 : 0); x < 16; x += 8) p(x, y, 1, 3, shade(c, -.25)); }
-      p(0, 0, 16, 1, shade(c, .3));
+      const [, , l] = shingles(ROOF_COL[id], 16); p(v & 1 ? 2 : 0, 0, 16 - (v & 1 ? 2 : 0) - (v & 2 ? 2 : 0), 1, l);
+      if (v & 4) { p(8, 3, 6, 10, '#8e8578'); p(8, 3, 6, 2, '#6f675c'); p(9, 6, 2, 1, '#a59c8e'); p(11, 9, 2, 1, '#a59c8e'); p(13, 5, 1, 8, '#6f675c'); }
       break;
     }
     case 'eave': {
-      const c = roofCol[id - 70 + 9]; p(0, 0, 16, 16, c);
-      for (let y = 0; y < 12; y += 4) { p(0, y + 3, 16, 1, shade(c, -.25)); for (let x = (y % 8 ? 4 : 0); x < 16; x += 8) p(x, y, 1, 3, shade(c, -.25)); }
-      p(0, 12, 16, 2, shade(c, -.4)); p(0, 14, 16, 2, '#5a4a3a');
+      const [, dd] = shingles(ROOF_COL[id - 70 + 9], 12);
+      p(0, 11, 16, 2, dd); p(0, 13, 16, 3, '#5f452d'); p(0, 13, 16, 1, '#7a5a3c');
       break;
     }
-    case T.BRIDGE: p(0, 0, 16, 16, '#b08a56'); for (let x = 0; x < 16; x += 4) p(x, 0, 1, 16, '#8a6636'); p(0, 0, 16, 1, '#6a4a24'); p(0, 15, 16, 1, '#6a4a24'); break;
+    case T.BRIDGE: p(0, 0, 16, 16, '#b98f58'); for (let x = 0; x < 16; x += 4) { p(x, 0, 1, 16, '#8a6238'); p(x + 1, 0, 1, 16, '#cfa56c'); } p(0, 0, 16, 2, '#6b4a2a'); p(0, 14, 16, 2, '#6b4a2a'); p(0, 2, 16, 1, '#8a6238'); break;
     case T.FLOOR: floor(); break;
-    case T.STONE: p(0, 0, 16, 16, '#8c8a98'); p(0, 7, 16, 1, '#74727e'); p(0, 15, 16, 1, '#74727e'); p(7, 0, 1, 7, '#74727e'); p(3, 8, 1, 7, '#74727e'); p(12, 8, 1, 7, '#74727e'); speck(6, ['#9c9aa8']); break;
-    case T.IWALL: p(0, 0, 16, 16, '#e8dcc4'); p(0, 0, 16, 2, '#7a5a3a'); p(0, 12, 16, 4, '#9a7a52'); p(0, 12, 16, 1, '#6a4a2a'); break;
-    case T.COUNTER: floor(); p(0, 2, 16, 12, '#a06a3a'); p(0, 2, 16, 3, '#d8a868'); p(0, 13, 16, 1, '#6a4420'); break;
-    case T.MAT: floor(); p(1, 6, 14, 10, '#c83a3a'); p(2, 7, 12, 8, '#e86a5a'); p(6, 10, 4, 3, '#f7e06a'); break;
-    case T.RUG: floor(); p(0, 0, 16, 16, '#7a4a9a'); p(1, 1, 14, 14, '#9a6aba'); p(6, 6, 4, 4, '#e8c040'); break;
-    case T.TABLE: floor(); p(1, 3, 14, 9, '#b07a44'); p(1, 3, 14, 2, '#d8a868'); p(2, 12, 2, 4, '#6a4420'); p(12, 12, 2, 4, '#6a4420'); break;
-    case T.SHELF: p(0, 0, 16, 16, '#7a5230'); p(1, 1, 14, 6, '#4a3020'); p(1, 9, 14, 6, '#4a3020'); ['#d8483a', '#3f8fe0', '#5cae4e', '#e8c040', '#9a52c4'].forEach((c, i) => { p(2 + i * 3, 2, 2, 5, c); p(1 + i * 3, 10, 2, 5, c); }); break;
-    case T.BED: floor(); p(2, 1, 12, 14, '#f0f0f8'); p(2, 6, 12, 9, '#5a8ad8'); p(4, 2, 8, 3, '#ffffff'); p(2, 6, 12, 1, '#3a6ab8'); break;
-    case T.POT: floor(); p(5, 10, 6, 5, '#b0603a'); p(4, 9, 8, 2, '#c8784a'); p(4, 2, 8, 7, '#3d9448'); p(6, 0, 4, 3, '#3d9448'); p(5, 3, 3, 2, '#5cc468'); break;
-    case T.HEARTH: p(0, 0, 16, 16, '#6a6470'); p(0, 0, 16, 2, '#4a4450'); p(2, 4, 12, 12, '#2a2430'); { const o = frame ? 1 : 0; p(4 + o, 9, 8 - o * 2, 7, '#f08a2c'); p(5, 7 + o, 3, 4, '#f08a2c'); p(9 - o, 6, 2, 5, '#f08a2c'); p(6, 11, 4, 5, '#fbe36a'); } break;
-    case T.PEDESTAL: floor(); p(3, 8, 10, 7, '#b8b4c4'); p(2, 6, 12, 3, '#d8d4e4'); p(3, 14, 10, 1, '#7a7688'); break;
-    case T.STATUE: p(0, 0, 16, 16, '#8c8a98'); p(3, 11, 10, 5, '#5a5866'); p(5, 3, 6, 8, '#b8b4c4'); p(6, 1, 4, 3, '#b8b4c4'); p(4, 5, 1, 4, '#b8b4c4'); p(11, 5, 1, 4, '#b8b4c4'); p(6, 4, 2, 1, '#d8d4e4'); break;
-    case T.CRATE: floor(); p(2, 3, 12, 12, '#b08a56'); p(2, 3, 12, 1, '#d0a870'); p(2, 14, 12, 1, '#7a5a30'); p(2, 3, 1, 12, '#7a5a30'); p(13, 3, 1, 12, '#7a5a30'); p(3, 4, 10, 1, '#7a5a30'); for (let i = 0; i < 10; i++) p(3 + i, 5 + i, 1, 1, '#7a5a30'); break;
-    default: p(0, 0, 16, 16, '#14121c');
+    case T.STONE: p(0, 0, 16, 16, '#8f8ca0'); p(0, 7, 16, 1, '#75728a'); p(0, 15, 16, 1, '#75728a'); p(7, 0, 1, 7, '#75728a'); p(3, 8, 1, 7, '#75728a'); p(12, 8, 1, 7, '#75728a'); p(0, 0, 7, 1, '#a09db2'); p(8, 0, 8, 1, '#a09db2'); p(0, 8, 3, 1, '#a09db2'); p(4, 8, 8, 1, '#a09db2'); speck(4, ['#9d9ab0']); break;
+    case T.IWALL: p(0, 0, 16, 16, '#eadcc0'); for (let x = 2; x < 16; x += 4) p(x, 2, 1, 9, '#e0d0ae'); p(0, 0, 16, 2, '#6b4a34'); p(0, 11, 16, 5, '#9a7650'); p(0, 11, 16, 1, '#6b4a2a'); p(0, 12, 16, 1, '#b58e62'); p(7, 13, 1, 3, '#7e5c3a'); p(15, 13, 1, 3, '#7e5c3a'); break;
+    case T.COUNTER: floor(); p(0, 1, 16, 13, '#9c6b3e'); p(0, 1, 16, 4, '#d9b07a'); p(0, 1, 16, 1, '#ecd09c'); p(0, 5, 16, 1, '#7a5433'); p(0, 13, 16, 1, '#5f452d'); p(2, 7, 5, 5, '#8a5d34'); p(9, 7, 5, 5, '#8a5d34'); break;
+    case T.MAT: floor(); p(1, 6, 14, 10, '#a8453f'); p(2, 7, 12, 8, '#db665a'); p(4, 9, 8, 4, '#ee8f80'); p(7, 10, 2, 2, '#f3d68f'); break;
+    case T.RUG: p(0, 0, 16, 16, '#5b4a86'); p(1, 0, 14, 16, '#7a65a8'); p(2, 0, 1, 16, '#d9ad55'); p(13, 0, 1, 16, '#d9ad55'); p(7, 3, 2, 2, '#d9ad55'); p(6, 4, 4, 1, '#d9ad55'); p(7, 11, 2, 2, '#d9ad55'); p(6, 12, 4, 1, '#d9ad55'); break;
+    case T.TABLE: floor(); p(2, 13, 12, 2, 'rgba(60,40,30,.35)'); p(1, 3, 14, 9, '#b07a44'); p(1, 3, 14, 2, '#d9b07a'); p(1, 11, 14, 1, '#7a5433'); p(2, 12, 2, 3, '#6b4a2a'); p(12, 12, 2, 3, '#6b4a2a'); p(5, 5, 3, 3, '#fbf6ea'); p(10, 6, 2, 2, '#db665a'); break;
+    case T.SHELF: p(0, 0, 16, 16, '#7a5433'); p(0, 0, 16, 1, '#96673c'); p(1, 1, 14, 6, '#3b2a24'); p(1, 9, 14, 6, '#3b2a24'); ['#db665a', '#4f7fc0', '#6fb86a', '#d9ad55', '#a89abf'].forEach((c, i) => { p(2 + i * 3, 2 + (i % 2), 2, 5 - (i % 2), c); p(1 + i * 3, 10 + ((i + 1) % 2), 2, 5 - ((i + 1) % 2), c); p(2 + i * 3, 2 + (i % 2), 1, 1, shade(c, .35)); }); break;
+    case T.BED: floor(); p(2, 1, 12, 14, '#fbf6ea'); p(2, 6, 12, 9, '#4f7fc0'); p(2, 14, 12, 1, '#33406a'); p(4, 2, 8, 3, '#ffffff'); p(2, 6, 12, 1, '#86c1ee'); p(2, 1, 12, 1, '#7a5433'); p(4, 9, 2, 2, '#86c1ee'); p(10, 11, 2, 2, '#86c1ee'); break;
+    case T.POT: floor(); p(4, 14, 9, 1, 'rgba(60,40,30,.35)'); p(5, 10, 6, 5, '#b0603a'); p(4, 9, 8, 2, '#c8784a'); p(4, 9, 8, 1, '#e09a6a'); p(4, 2, 8, 7, '#3f8a48'); p(6, 0, 4, 3, '#3f8a48'); p(5, 3, 3, 2, '#6fb86a'); p(9, 5, 2, 2, '#2f6f43'); p(7, 1, 1, 1, '#90cc74'); break;
+    case T.HEARTH: p(0, 0, 16, 16, '#6f6a7c'); p(0, 0, 16, 2, '#4a4458'); for (let x = 0; x < 16; x += 5) p(x, 2, 1, 3, '#55506a'); p(2, 4, 12, 12, '#25213d'); { const o = frame ? 1 : 0; p(4 + o, 9, 8 - o * 2, 7, '#e8763a'); p(5, 7 + o, 3, 4, '#e8763a'); p(9 - o, 6, 2, 5, '#e8763a'); p(6, 11, 4, 5, '#f9d77a'); p(7, 13 - o, 2, 3, '#fff9ea'); p(3, 15, 10, 1, '#5f452d'); } break;
+    case T.PEDESTAL: floor(); p(3, 14, 11, 1, 'rgba(60,40,30,.35)'); p(3, 8, 10, 7, '#b8b4c8'); p(2, 6, 12, 3, '#d8d4e6'); p(2, 6, 12, 1, '#f0eef8'); p(3, 14, 10, 1, '#7a7690'); p(11, 9, 2, 5, '#9a96ac'); break;
+    case T.STATUE: p(0, 0, 16, 16, '#8f8ca0'); p(0, 15, 16, 1, '#75728a'); p(3, 11, 10, 5, '#5c5970'); p(3, 11, 10, 1, '#75728a'); p(5, 3, 6, 8, '#b8b4c8'); p(6, 1, 4, 3, '#b8b4c8'); p(4, 5, 1, 4, '#b8b4c8'); p(11, 5, 1, 4, '#9a96ac'); p(6, 1, 2, 1, '#d8d4e6'); p(9, 4, 2, 7, '#9a96ac'); break;
+    case T.CRATE: floor(); p(2, 3, 12, 12, '#b98f58'); p(2, 3, 12, 1, '#d6b47c'); p(2, 14, 12, 1, '#7a5433'); p(2, 3, 1, 12, '#7a5433'); p(13, 3, 1, 12, '#7a5433'); p(3, 4, 10, 1, '#8a6238'); for (let i = 0; i < 9; i++) p(3 + i, 5 + i, 2, 1, '#8a6238'); break;
+    default: p(0, 0, 16, 16, '#171629');
   }
   return cv;
+}
+const EDGE_TEETH = [2, 1, 2, 2, 1, 2, 1, 1, 2, 2, 1, 2, 2, 1, 2, 1];
+function paintEdge(kind, mask, biome, frame) {
+  const cv = makeCanvas(16, 16), g = cv.getContext('2d'), B = BIOMES[biome] || BIOMES[0];
+  const p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+  if (kind === 'path') { // the neighbouring ground creeps onto the path with a ragged edge
+    const G = B.g, ln = shade(B.path, -.2);
+    for (let i = 0; i < 16; i++) {
+      if (mask & 1) p(i, EDGE_TEETH[i], 1, 1, ln); if (mask & 4) p(i, 15 - EDGE_TEETH[(i + 5) % 16], 1, 1, ln);
+      if (mask & 8) p(EDGE_TEETH[(i + 3) % 16], i, 1, 1, ln); if (mask & 2) p(15 - EDGE_TEETH[(i + 9) % 16], i, 1, 1, ln);
+    }
+    for (let i = 0; i < 16; i++) {
+      if (mask & 1) p(i, 0, 1, EDGE_TEETH[i], G); if (mask & 4) { const d = EDGE_TEETH[(i + 5) % 16]; p(i, 16 - d, 1, d, G); }
+      if (mask & 8) p(0, i, EDGE_TEETH[(i + 3) % 16], 1, G); if (mask & 2) { const d = EDGE_TEETH[(i + 9) % 16]; p(16 - d, i, d, 1, G); }
+    }
+  } else { // shore: a dark bank line and a moving thread of foam
+    const bank = shade(B.g, -.42), deep = '#3577bd', foam = '#b6dcf6';
+    const dash = i => (i + frame * 4) % 9 < 3;
+    if (mask & 1) { p(0, 0, 16, 1, bank); p(0, 1, 16, 2, deep); for (let i = 0; i < 16; i++) if (dash(i)) p(i, 3, 1, 1, foam); }
+    if (mask & 4) { for (let i = 0; i < 16; i++) if (dash(i + 3)) p(i, 14, 1, 1, foam); p(0, 15, 16, 1, '#86c1ee'); }
+    if (mask & 8) { p(0, 0, 1, 16, bank); p(1, 0, 1, 16, deep); for (let i = 0; i < 16; i++) if (dash(i + 2)) p(2, i, 1, 1, foam); }
+    if (mask & 2) { p(15, 0, 1, 16, bank); p(14, 0, 1, 16, deep); for (let i = 0; i < 16; i++) if (dash(i + 5)) p(13, i, 1, 1, foam); }
+  }
+  return cv;
+}
+/* Tall scenery on a 22x30 canvas, anchored bottom-centre on its tile. */
+function paintProp(biome, v) {
+  const cv = makeCanvas(22, 30), g = cv.getContext('2d'), B = BIOMES[biome] || BIOMES[0];
+  const rng = mulberry32(biome * 77 + v * 13 + 3);
+  const p = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x + 1, y + 1, w, h); };
+  const round = (c, cx, cy, rx, ry) => {
+    const l = shade(c, .24), d = shade(c, -.24);
+    for (let y = Math.floor(cy - ry) - 1; y <= cy + ry + 1; y++) for (let x = Math.floor(cx - rx) - 1; x <= cx + rx + 1; x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry; if (dx * dx + dy * dy + (rng() - .5) * .22 >= 1) continue;
+      const lx = x - (cx - rx * .35), ly = y - (cy - ry * .4), sx = x - (cx + rx * .35), sy = y - (cy + ry * .45);
+      let col = lx * lx + ly * ly < rx * ry * .22 ? l : (sx * sx + sy * sy < rx * ry * .3 || y > cy + ry * .55) ? d : c;
+      if (rng() < .1) col = col === l ? c : d;
+      p(x, y, 1, 1, col);
+    }
+  };
+  const trunk = (x, y, w, h) => { p(x, y, w, h, '#7a5433'); p(x + w - 1, y, 1, h, '#5f452d'); p(x - 1, y + h - 1, w + 2, 1, '#5f452d'); };
+  const pine = (c, snow) => {
+    const l = shade(c, .22), d = shade(c, -.24);
+    trunk(9, 23, 2, 5);
+    for (let t = 2; t >= 0; t--) { const y0 = 6 + t * 5, hw = 5 + t * 2; for (let r = 0; r < 8; r++) { const half = Math.max(1, Math.round((r + 1) / 8 * hw)); p(10 - half, y0 + r, half * 2, 1, c); p(10 + Math.floor(half / 3), y0 + r, half - Math.floor(half / 3), 1, d); if (r > 1) p(10 - half, y0 + r, Math.max(1, Math.floor(half / 2)), 1, l); if (snow && r < 3 + (t === 0 ? 1 : 0)) p(10 - half, y0 + r, Math.max(2, half + 1), 1, '#f4fbff'); } p(10 - hw, y0 + 7, hw * 2, 1, d); }
+  };
+  const boulder = (c, glow) => {
+    const l = shade(c, .26), d = shade(c, -.24), dd = shade(c, -.42);
+    p(6, 14, 8, 1, c); p(4, 15, 12, 2, c); p(3, 17, 14, 4, c); p(2, 20, 16, 5, c); p(3, 25, 14, 2, d); p(5, 27, 10, 1, dd);
+    p(6, 14, 5, 1, l); p(4, 15, 5, 2, l); p(3, 17, 3, 3, l); p(14, 18, 3, 7, d); p(12, 22, 4, 4, d); p(9, 18, 1, 4, d); p(10, 21, 2, 1, d);
+    if (glow) { p(8, 19, 1, 4, '#db665a'); p(9, 22, 3, 1, '#db665a'); p(11, 20, 1, 2, '#f1a04a'); }
+  };
+  const palm = () => {
+    const c = '#3f9a52', l = '#6fc070', d = '#2f7440';
+    p(10, 11, 2, 5, '#a07c4c'); p(9, 16, 2, 5, '#a07c4c'); p(9, 21, 3, 7, '#a07c4c'); p(11, 21, 1, 7, '#7a5a34'); for (let y = 13; y < 28; y += 3) p(9, y, 2, 1, '#7a5a34');
+    p(2, 8, 8, 2, c); p(1, 10, 4, 2, c); p(0, 12, 2, 2, d); p(11, 8, 8, 2, c); p(16, 10, 4, 2, d); p(18, 12, 2, 2, d);
+    p(5, 4, 4, 3, c); p(3, 5, 3, 2, c); p(11, 4, 4, 3, c); p(15, 5, 3, 2, d); p(8, 6, 5, 3, l); p(3, 8, 5, 1, l); p(6, 4, 2, 1, l); p(9, 10, 2, 2, '#6b4a2a');
+  };
+  const dead = () => { const c = '#3a3036'; p(9, 12, 3, 16, c); p(5, 10, 5, 2, c); p(4, 7, 2, 4, c); p(12, 14, 5, 2, c); p(15, 10, 2, 5, c); p(9, 12, 1, 16, '#4c4048'); p(4, 6, 2, 1, '#db665a'); p(15, 9, 2, 1, '#f1a04a'); p(8, 27, 5, 1, '#2a2228'); };
+  const bush = c => { round(c, 10, 21, 8.5, 6); p(6, 19, 1, 1, '#e8736a'); p(13, 21, 1, 1, '#e8736a'); p(10, 17, 1, 1, '#e8736a'); };
+  if (biome === 0) { if (v === 2) pine('#2f7a48'); else if (v === 3) bush('#4a9450'); else { trunk(9, 20, 3, 7); round(v ? '#44904c' : B.tree, 10, 13.5, 9.4, 8.4); } }
+  else if (biome === 1) { if (v === 2) pine(B.tree); else boulder(v === 1 ? '#8f8674' : '#9a8f7a'); }
+  else if (biome === 2) { if (v === 1) dead(); else boulder('#40363c', v !== 3); }
+  else if (biome === 3) { if (v === 1) { trunk(9, 20, 3, 7); round('#2a5c48', 10, 13.5, 9.4, 8.4); } else pine(v === 3 ? '#1f4a3a' : B.tree); }
+  else if (biome === 4) { if (v === 1) { boulder('#9fb2c2'); p(5, 14, 9, 2, '#f4fbff'); p(3, 16, 6, 1, '#f4fbff'); } else pine(B.tree, true); }
+  else { if (v === 2) boulder('#c9b88c'); else palm(); }
+  return pixelize(cv);
 }

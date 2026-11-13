@@ -9,7 +9,8 @@
       if (data && data.v === 1 && data.party) { S = data; Game.fadeA = 1; startWorld(); } else titleFlow();
     };
     if (document.fonts && document.fonts.load) {
-      Promise.race([document.fonts.load('20px "Jersey 20"'), new Promise(r => setTimeout(r, 1500))]).then(go, go);
+      const faces = ['20px "Jersey 20"', '700 14px Nunito', '800 14px Nunito'].map(f => document.fonts.load(f));
+      Promise.race([Promise.all(faces), new Promise(r => setTimeout(r, 1500))]).then(go, go);
     } else go();
   }
   // When hosted somewhere that can hot-swap the page, carry the running game across.

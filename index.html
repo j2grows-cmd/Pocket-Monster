@@ -6,21 +6,39 @@
 <title>Tamers of Vessara</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Jersey+20&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jersey+20&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <main id="app">
-  <header class="bar">
-    <h1>Tamers of <b>Vessara</b></h1>
+  <header class="hud">
+    <div class="brand">
+      <svg class="crest" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true">
+        <path fill="#171629" d="M3 0h2v1h1v1h1v1h1v2h-1v1h-1v1h-1v1h-2v-1h-1v-1h-1v-1h-1v-2h1v-1h1v-1h1z"/>
+        <path fill="#d9ad55" d="M3 1h2v1h1v1h1v2h-1v1h-1v1h-2v-1h-1v-1h-1v-2h1v-1h1z"/>
+        <path fill="#f3d68f" d="M3 1h2v1h-1v1h-1v1h-1v1h-1v-2h1v-1h1z"/>
+        <path fill="#9c7636" d="M6 4h1v1h-1v1h-1v1h-2v-1h2v-1h1z"/>
+        <path fill="#fff9ea" d="M3 2h1v1h-1z"/>
+      </svg>
+      <h1><small>Tamers of</small><b>Vessara</b></h1>
+    </div>
+    <div class="status" aria-live="polite">
+      <span class="chip loc"><i class="pin" aria-hidden="true"></i><span id="hud-loc">Title screen</span></span>
+      <span class="chip who" id="hud-who" hidden>
+        <b id="hud-name"></b>
+        <span class="stat"><i class="gem" aria-hidden="true"></i><span id="hud-sig">0/8</span><em>sigils</em></span>
+        <span class="stat"><i class="coin" aria-hidden="true"></i><span id="hud-coins">0</span><em>coins</em></span>
+        <span class="stat"><i class="book" aria-hidden="true"></i><span id="hud-jr">0/151</span><em>caught</em></span>
+      </span>
+    </div>
     <p class="keys" aria-label="Keyboard controls">
-      <span><kbd>Arrows</kbd> move</span>
-      <span><kbd>Z</kbd> / <kbd>Enter</kbd> confirm</span>
-      <span><kbd>X</kbd> / <kbd>Esc</kbd> back, hold to run</span>
-      <span><kbd>M</kbd> menu</span>
+      <span><kbd>Arrows</kbd> Move</span>
+      <span><kbd class="a">Z</kbd> A: confirm</span>
+      <span><kbd class="b">X</kbd> B: back, hold to run</span>
+      <span><kbd>M</kbd> Menu</span>
     </p>
   </header>
-  <div id="stage"><canvas id="game" width="480" height="320" aria-label="Tamers of Vessara game screen"></canvas></div>
+  <div id="stage"><div class="frame"><canvas id="game" width="480" height="320" aria-label="Tamers of Vessara game screen"></canvas></div></div>
   <div id="pad" aria-label="Touch controls">
     <div class="dpad">
       <button type="button" id="pad-up" data-k="up" aria-label="Up"></button>
@@ -39,7 +57,9 @@
 <script src="js/data/moves.js"></script>
 <script src="js/data/monsters.js"></script>
 <script src="js/data/items.js"></script>
+<script src="js/ui.js"></script>
 <script src="js/sprites.js"></script>
+<script src="js/scenery.js"></script>
 <script src="js/data/world.js"></script>
 <script src="js/state.js"></script>
 <script src="js/engine.js"></script>
