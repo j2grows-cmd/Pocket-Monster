@@ -427,7 +427,7 @@ const Sprites = {
    [hair, skin, top, legs, style words, accent]. Styles: long cap hat hood band beard bald bun spiky scarf cape robe apron */
 const CHAR_PALS = {
   hero: ['#3b2a24', '#f2c8a0', '#db665a', '#2f3a66', 'band scarf', '#d9ad55'], rival: ['#cfd0de', '#f2c8a0', '#3a3a5e', '#25213d', 'spiky scarf', '#a89abf'],
-  sage: ['#ecebe4', '#e8b890', '#f5efe0', '#6a5a4a', 'beard robe', '#3f9a8c'], guard: ['#4a3a2a', '#e8b890', '#4f7fc0', '#33406a', 'cap', '#33406a'],
+  sage: ['#ecebe4', '#e8b890', '#f5efe0', '#6a5a4a', 'bun robe', '#3f9a8c'], guard: ['#4a3a2a', '#e8b890', '#4f7fc0', '#33406a', 'cap', '#33406a'],
   healer: ['#e88aa6', '#f2c8a0', '#db665a', '#e8a0b0', 'long apron', '#fff9ea'], shop: ['#3a5a3a', '#e8b890', '#4f7fc0', '#4a4458', 'cap apron', '#557d58'],
   warden: ['#2b2540', '#e8b890', '#d9ad55', '#473f70', 'cape band', '#a8453f'], kid: ['#b0703a', '#f2c8a0', '#f1cf6a', '#557d58', 'cap', '#db665a'],
   lass: ['#d9a441', '#f2c8a0', '#e8739a', '#7a4f8f', 'long', '#fff9ea'], hiker: ['#6a4a2a', '#d8a880', '#7f9a4c', '#6a5a3a', 'hat', '#b9834f'],
