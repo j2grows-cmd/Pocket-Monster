@@ -28,7 +28,7 @@ async function fadeIn(ms) { await tween(Game, 'fadeA', 0, ms || 160); }
    Lines that start "Name: " get a name plate, and a portrait when we know the speaker's face. */
 const SPEAKERS = { 'Sage Maren': 'sage', 'Corvin': 'rival', 'Rival Corvin': 'rival', 'Road Warden': 'guard' };
 const Msg = {
-  visible: false, pages: [], page: 0, chars: 0, resolve: null, auto: 0, hold: 0, ctx: null, who: null, face: null,
+  visible: false, pages: [], page: 0, chars: 0, resolve: null, auto: 0, hold: 0, ctx: null, who: null, face: null, badge: null,
   layout(str) {
     let who = null, face = null; const c = this.ctx;
     const m = /^([A-Z][A-Za-z' ]{1,24}): /.exec(str);
@@ -67,8 +67,12 @@ const Msg = {
     let tx = x + 18;
     if (this.face) {
       panel(g, x + 10, y + 10, 58, 58, 'well', { fill: PAL.indigo2 });
-      g.drawImage(Sprites.portrait(this.face), x + 15, y + 17, 48, 48);
+      g.drawImage(Sprites.portrait(this.face, this.who || (this.ctx && this.ctx.name)), x + 15, y + 15, 48, 48);
       tx = x + 80;
+    }
+    if (this.badge != null && Art.img['sigils-64']) { // a sigil being handed over
+      const bx = VW / 2 - 50, by = y - 112;
+      panel(g, bx, by, 100, 100, 'dark'); drawSigil(g, this.badge, bx + 18, by + 16 + Math.round(Math.sin(Game.t / 300)) * 2, 64, true);
     }
     if (this.who) {
       const nw = Math.ceil(textW(g, this.who, 13, { font: 'd', track: .5 })) + 20;

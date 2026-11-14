@@ -10,6 +10,12 @@ function sigilRow(g, x, y, n) {
     if (i < n) { g.fillStyle = PAL.goldHi; g.fillRect(sx + 2, y + 2, 2, 2); }
   }
 }
+/* The eight sigils as illustrated badges, 128 wide. False if the art is not there. */
+function sigilBadges(g, x, y) {
+  if (!Art.img['sigils-16']) return false;
+  for (let i = 0; i < 8; i++) drawSigil(g, i, x + i * 16, y, 16, !!S.flags['W:' + (i + 1)]);
+  return true;
+}
 function playTime() { const m = Math.floor((S.time || 0) / 60000); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }
 function noteBar(g, note) { if (!note) return; panel(g, 60, VH - 60, VW - 120, 32, 'dark'); text(g, note, VW / 2, VH - 52, { align: 'center', size: 12, color: PAL.parch }); }
 
@@ -18,13 +24,15 @@ async function pauseMenu() {
   const items = [['Journal', 'journal'], ['Team', 'team'], ['Bag', 'bag'], ['Map', 'map'], ['Save', 'save'], ['Close', 'close']];
   let start = 0;
   const draw = (g, st) => {
-    const x = VW - 162, y = 8, w = 154, h = 240;
+    const badges = !!Art.img['sigils-16'], dy = badges ? 20 : 0;
+    const x = VW - 162, w = 154, h = 240 + dy; let y = 8;
     panel(g, x, y, w, h, 'dark');
     panel(g, x + 10, y + 10, 40, 40, 'well', { fill: PAL.indigo3 });
-    g.drawImage(Sprites.portrait('hero'), x + 14, y + 16, 32, 32);
+    g.drawImage(Sprites.portrait('hero', null, 32), x + 14, y + 14, 32, 32);
     text(g, S.name, x + 58, y + 7, { font: 'd', size: 17, color: PAL.parch, track: .5 });
     text(g, 'Tamer of Vessara', x + 58, y + 27, { size: 10, color: PAL.lav });
-    sigilRow(g, x + 58, y + 42, sigilCount());
+    if (badges) sigilBadges(g, x + 13, y + 56); else sigilRow(g, x + 58, y + 42, sigilCount());
+    y += dy;
     g.fillStyle = PAL.indigo3; g.fillRect(x + 10, y + 58, w - 20, 2);
     icon(g, 'coin', x + 10, y + 66, 1); text(g, String(S.coins), x + 21, y + 63, { size: 10, weight: 800, color: PAL.goldHi });
     icon(g, 'journal', x + 62, y + 66, 1); text(g, caughtCount() + '/144', x + 73, y + 63, { size: 10, weight: 800, color: PAL.parch });
@@ -206,7 +214,7 @@ function itemList(g, list, sel, top, right) {
   for (let i = top; i < Math.min(list.length, top + 10); i++) {
     const y = 50 + (i - top) * 24;
     if (i === sel) selRow(g, 14, y - 2, 244, 22);
-    icon(g, itemIcon(list[i]), 22, y + 1, 2);
+    drawItem(g, list[i], 22, y + 1, 16);
     text(g, list[i], 46, y - 1, { size: 13, weight: i === sel ? 800 : 700 });
     const r = right(list[i]); if (r) text(g, r.text, 250, y, { align: 'right', size: 12, weight: 800, color: r.color || PAL.soft });
   }
@@ -215,7 +223,7 @@ function itemList(g, list, sel, top, right) {
 function itemDetail(g, name, extra, note) {
   panel(g, 272, 40, 200, 150, 'parch');
   if (name) {
-    panel(g, 282, 50, 40, 40, 'well', { fill: PAL.indigo2 }); icon(g, itemIcon(name), 286, 54, 4);
+    panel(g, 282, 50, 40, 40, 'well', { fill: PAL.indigo2 }); drawItem(g, name, 286, 54, 32);
     text(g, name, 330, 50, { font: 'd', size: 16 });
     if (extra) text(g, extra, 330, 70, { size: 11, color: PAL.soft });
     wrap(g, ITEMS[name].desc, 176, 12).forEach((ln, i) => text(g, ln, 284, 98 + i * 16, { size: 12 }));
@@ -309,7 +317,7 @@ function journalScreen() {
 function mapScreen() {
   return layer({
     draw(g) {
-      screenFrame(g, 'Vessara', [['A', 'Back'], ['B', 'Back']], g2 => sigilRow(g2, VW - 92, 11, sigilCount()));
+      screenFrame(g, 'Vessara', [['A', 'Back'], ['B', 'Back']], g2 => { if (!sigilBadges(g2, VW - 138, 7)) sigilRow(g2, VW - 92, 11, sigilCount()); });
       const mx = 44, my = 46, sc = 2;
       panel(g, mx - 8, my - 8, 408, 236, 'parch');
       g.fillStyle = PAL.night; g.fillRect(mx - 2, my - 2, 396, 224);
@@ -422,7 +430,7 @@ async function evolveScene(m) {
       const speed = st.phase ? 40 + Math.max(0, 260 - st.t / 8) : 0;
       const showNew = st.done || (st.phase && Math.floor(st.t / speed) % 2);
       const id = showNew ? to : from;
-      if (st.phase && !st.done) g.drawImage(Sprites.white(id), cx - 96, 22, 192, 192); else drawMon(g, id, cx - 96, 22 + Math.round(Math.sin(st.t / 300)) * 2, 192);
+      if (st.phase && !st.done) g.drawImage(Sprites.bigWhite(id), cx - 96, 22, 192, 192); else g.drawImage(Sprites.big(id), cx - 96, 22 + Math.round(Math.sin(st.t / 300)) * 2, 192, 192);
       if (st.done) { const w = Math.ceil(textW(g, DEX[to].name.toUpperCase(), 18, { font: 'd', track: 1.5 })) + 36; rrect(g, cx - w / 2, 8, w, 28, 4, PAL.night); rrect(g, cx - w / 2 + 2, 10, w - 4, 24, 2, PAL.gold); g.fillStyle = PAL.indigo; g.fillRect(cx - w / 2 + 4, 12, w - 8, 20); text(g, DEX[to].name.toUpperCase(), cx, 10, { font: 'd', size: 18, align: 'center', color: PAL.goldHi, track: 1.5 }); }
       Msg.draw(g);
     },

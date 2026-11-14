@@ -201,7 +201,7 @@ const Battle = {
       const fm = v.foe.mon, d = DEX[fm.id];
       addItem(itemName, -1);
       await tell(S.name + ' threw a ' + itemName + '!');
-      v.charm = { x: 110, y: 170, rock: 0 };
+      v.charm = { x: 110, y: 170, rock: 0, item: itemName };
       tween(v.charm, 'y', 112, 340, x => 1 - (1 - x) * (1 - x)); await tween(v.charm, 'x', 386, 340);
       await tween(v, 'foeShow', 0, 160);
       const max = statOf(fm, 'hp');
@@ -350,29 +350,48 @@ const Battle = {
     wrap(g, M.desc, 146, 9).slice(0, 2).forEach((ln, i) => text(g, ln, dx, y + (M.cat === 'S' ? 40 : 53) + i * 11, { size: 9, color: PAL.lav }));
   },
 
+  /* A soft stepped shadow on the ground. */
+  ground(g, cx, cy, w, a) {
+    if (a <= 0.02) return;
+    g.globalAlpha = a; g.fillStyle = 'rgba(20,16,44,.3)';
+    const ry = Math.max(4, Math.round(w / 12) * 2);
+    for (let y = -ry; y < ry; y += 2) { const hw = Math.round(w / 2 * Math.sqrt(1 - (y + 1) * (y + 1) / (ry * ry)) / 2) * 2; g.fillRect(cx - hw, cy + y, hw * 2, 2); }
+    g.globalAlpha = 1;
+  },
   draw(g) {
     const v = this.v; if (!v) return;
     const t = Game.t, even = n => Math.round(n / 2) * 2;
+    const painted = !!Art.scene(v.biome);
     g.drawImage(Scenery.backdrop(v.biome), 0, 0, VW, VH);
     Scenery.ambient(g, v.biome, 0, 0, v.biome === 3 ? 1 : 0, true);
     const CEN = { foe: [394, 106], me: [104, 156] };
     // the other tamer steps up before and after the fight
     const T_ = v.opts.trainer;
-    if (T_ && T_.pal && v.trainerShow > 0.02) { g.globalAlpha = v.trainerShow; g.drawImage(Sprites.char(T_.pal, 'down', 0), even(358 + (1 - v.trainerShow) * 40), 70, 72, 88); g.globalAlpha = 1; }
+    if (T_ && T_.pal && v.trainerShow > 0.02) {
+      const fig = Sprites.figure(T_.pal, T_.name), slide = (1 - v.trainerShow) * 40;
+      g.globalAlpha = v.trainerShow;
+      if (fig) { if (painted) this.ground(g, 394, 158, 60, v.trainerShow); g.globalAlpha = v.trainerShow; g.drawImage(fig, even(338 + slide), 32); }
+      else g.drawImage(Sprites.char(T_.pal, 'down', 0), even(358 + slide), 70, 72, 88);
+      g.globalAlpha = 1;
+    }
+    // painted scenes have no built-in platforms, so each monster gets a patch of shade to stand on
+    if (painted) { this.ground(g, 394, 158, 92, v.foeShow); this.ground(g, 104, 226, 132, v.meShow); }
     // the foe faces you at 2x; your own monster is seen from behind, larger and closer
     const sprite = (b, show, dxo, bx, by, mine) => {
       if (show <= 0.02 || (v[b.side + 'Blink'] > t && v.flash[b.side] < t && Math.floor(t / 55) % 2)) return;
-      const id = b.mon.id, size = mine ? 192 : 128; let oy = (1 - show) * 28, h = size;
+      const id = b.mon.id, src = mine ? Sprites.back(id) : Sprites.mon(id), turned = mine && src.width === 160, size = turned ? 160 : mine ? 192 : 128;
+      if (turned) { bx += 16; by += 32; }
+      let oy = (1 - show) * 28, h = size;
       if (BODIES[DEX[id].art.b].float) oy += Math.round(Math.sin(t / 380 + (mine ? 2 : 0)) * 2) * 2;
       else if (Math.floor(t / 640 + (mine ? .5 : 0)) % 2) { h = size - 2; oy += 2; } // breathing
       const sh = v.shake[b.side] > t ? (Math.floor(t / 45) % 2 ? 4 : -4) : 0;
-      g.globalAlpha = show; g.drawImage(mine ? Sprites.back(id) : Sprites.mon(id), even(bx + dxo) + sh, even(by + oy), size, h);
+      g.globalAlpha = show; g.drawImage(src, even(bx + dxo) + sh, even(by + oy), size, h);
       if (v.flash[b.side] > t) { g.globalAlpha = clamp((v.flash[b.side] - t) / 150, 0, 1); g.drawImage(mine ? Sprites.backWhite(id) : Sprites.white(id), even(bx + dxo) + sh, even(by + oy), size, h); }
       g.globalAlpha = 1;
     };
     sprite(v.foe, v.foeShow, v.foeDX, 330, 34, false);
     sprite(v.me, v.meShow, v.meDX, 8, 38, true);
-    if (v.charm) { g.save(); g.translate(v.charm.x + 16, v.charm.y + 32); g.rotate(v.charm.rock * 0.35); g.drawImage(objSprite('charm'), -16, -32, 32, 32); g.restore(); }
+    if (v.charm) { g.save(); g.translate(v.charm.x + 16, v.charm.y + 32); g.rotate(v.charm.rock * 0.35); if (Art.img['items-32'] && Art.ITEMS[v.charm.item] !== undefined) drawItem(g, v.charm.item, -16, -32, 32); else g.drawImage(objSprite('charm'), -16, -32, 32, 32); g.restore(); }
 
     // ---- effects ----
     const dot = (x, y, s, col) => { g.fillStyle = col; g.fillRect(even(x), even(y), s, s); };

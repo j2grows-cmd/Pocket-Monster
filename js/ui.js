@@ -150,6 +150,20 @@ function itemIcon(name) {
   return { heal: 'tonic', cure: 'cure', revive: 'revive', ward: 'incense' }[it.kind] || 'bag';
 }
 
+/* An item at 16 or 32 pixels: illustrated if we have it, the built-in icon otherwise. */
+function drawItem(g, name, x, y, size) {
+  const im = Art.img['items-' + size], i = Art.ITEMS[name];
+  if (im && i !== undefined) g.drawImage(im, i * size, 0, size, size, x, y, size, size);
+  else icon(g, itemIcon(name), x, y, size / 8);
+}
+/* One of the eight sigils at 16 or 64 pixels; dim when not yet earned. Returns false if there is no art for it. */
+function drawSigil(g, i, x, y, size, held) {
+  const im = Art.img['sigils-' + size]; if (!im) return false;
+  if (!held) { const k = 'sig0|' + size + '|' + i; g.drawImage(Sprites._misc[k] || (Sprites._misc[k] = tinted(Art.cell('sigils-' + size, i, size, size, 8), '#3a335e')), x, y); }
+  else g.drawImage(im, i * size, 0, size, size, x, y, size, size);
+  return true;
+}
+
 const TYPE_GLYPH = {
   Wild: ['#.#.#', '.....', '.###.', '#####', '.###.'], Flora: ['..###', '.####', '####.', '###..', '#....'], Ember: ['..#..', '.##..', '.###.', '#####', '.###.'],
   Tide: ['..#..', '.###.', '#####', '#####', '.###.'], Spark: ['...##', '..##.', '#####', '.##..', '##...'], Stone: ['.###.', '#####', '#####', '####.', '.##..'],
@@ -231,6 +245,6 @@ function coinsChip(g, x, y) {
 }
 /* Monster art at pixel-true sizes: 32 (icon), 64, 128, 192. */
 function drawMon(g, id, x, y, size, flip, sil) {
-  const src = size <= 32 ? Sprites.icon(id) : sil ? Sprites.silhouette(id) : flip ? Sprites.monFlip(id) : Sprites.mon(id);
+  const src = size <= 32 ? Sprites.icon(id) : sil ? Sprites.silhouette(id) : flip ? Sprites.monFlip(id) : size <= 64 ? Sprites.mid(id) : Sprites.mon(id);
   g.drawImage(src, Math.round(x), Math.round(y), size, size);
 }

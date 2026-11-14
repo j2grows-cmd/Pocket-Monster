@@ -383,12 +383,26 @@ function tinted(src, col) {
 }
 
 const Sprites = {
-  _mon: {}, _flip: {}, _sil: {}, _white: {}, _icon: {}, _back: {}, _backW: {}, _char: {}, _tile: new Map(), _edge: new Map(), _prop: {}, _misc: {},
-  mon(id) { return this._mon[id] || (this._mon[id] = paintMonster(DEX[id].art)); },
-  icon(id) { return this._icon[id] || (this._icon[id] = paintMonster(DEX[id].art, 32)); },
-  back(id) { return this._back[id] || (this._back[id] = paintMonster(DEX[id].art, 96, true)); },
+  _mon: {}, _mid: {}, _big: {}, _bigW: {}, _flip: {}, _sil: {}, _white: {}, _icon: {}, _back: {}, _backW: {}, _char: {}, _tile: new Map(), _edge: new Map(), _prop: {}, _misc: {},
+  /* Illustrated art arrived (or changed): forget anything built from the stand-in art. */
+  reset() {
+    for (const k of ['_mon', '_mid', '_big', '_bigW', '_flip', '_sil', '_white', '_icon', '_back', '_backW', '_misc']) this[k] = {};
+    for (const k of Object.keys(this._char)) if (k.startsWith('face|') || k.startsWith('full|')) delete this._char[k];
+  },
+  /* Monsters use the illustrated sheets when they are there and the built-in painter when they are not.
+     mon: battle and summary size; mid: cards; icon: lists and the map; big: evolution; back: your own monster in battle
+     (illustrated monsters have no rear view, so yours is the front view turned to face the foe, a little larger). */
+  mon(id) { return this._mon[id] || (this._mon[id] = Art.mon(id, 128) || paintMonster(DEX[id].art)); },
+  mid(id) { return this._mid[id] || (this._mid[id] = Art.mon(id, 64) || this.mon(id)); },
+  big(id) { // 192 square for the evolution scene: the largest illustrated size, centred on the ground line
+    if (!this._big[id]) { const a = Art.mon(id, 160); let c = this.mon(id); if (a) { c = makeCanvas(192, 192); c.getContext('2d').drawImage(a, 16, 32); } this._big[id] = c; }
+    return this._big[id];
+  },
+  bigWhite(id) { return this._bigW[id] || (this._bigW[id] = tinted(this.big(id), '#fff9ea')); },
+  icon(id) { return this._icon[id] || (this._icon[id] = Art.mon(id, 32) || paintMonster(DEX[id].art, 32)); },
+  back(id) { return this._back[id] || (this._back[id] = Art.mon(id, 160, true) || paintMonster(DEX[id].art, 96, true)); },
   monFlip(id) {
-    if (!this._flip[id]) { const s = this.mon(id), c = makeCanvas(64, 64), g = c.getContext('2d'); g.translate(64, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); this._flip[id] = c; }
+    if (!this._flip[id]) { const s = this.mon(id), c = makeCanvas(s.width, s.height), g = c.getContext('2d'); g.translate(s.width, 0); g.scale(-1, 1); g.drawImage(s, 0, 0); this._flip[id] = c; }
     return this._flip[id];
   },
   silhouette(id) { return this._sil[id] || (this._sil[id] = tinted(this.mon(id), '#473f70')); },
@@ -399,10 +413,21 @@ const Sprites = {
     return this._char[key] || (this._char[key] = paintChar(CHAR_PALS[pal] || CHAR_PALS.hero, dir, frame));
   },
   /* Head and shoulders, for the dialogue box. */
-  portrait(pal) {
-    const key = 'face|' + pal;
-    if (!this._char[key]) { const c = makeCanvas(16, 16); c.getContext('2d').drawImage(this.char(pal, 'down', 0), 1, 0, 16, 16, 0, 0, 16, 16); this._char[key] = c; }
+  portrait(pal, name, size) {
+    size = size || 48;
+    const who = Art.person(pal, name), key = 'face|' + pal + '|' + who + '|' + size;
+    if (!this._char[key]) {
+      let c = Art.cell('faces-' + size, who, size, size, 16);
+      if (!c) { c = makeCanvas(16, 16); c.getContext('2d').drawImage(this.char(pal, 'down', 0), 1, 0, 16, 16, 0, 0, 16, 16); }
+      this._char[key] = c;
+    }
     return this._char[key];
+  },
+  /* A full illustrated figure for the battlefield, or null if this person has none. */
+  figure(pal, name) {
+    const who = Art.person(pal, name), key = 'full|' + who;
+    if (who < 0) return null;
+    return this._char[key] || (this._char[key] = Art.cell('people', who, 112, 128, 16));
   },
   tile(id, biome, frame, v) {
     const n = animFrames(id), f = n > 1 ? (frame || 0) % n : 0; v = v || 0;

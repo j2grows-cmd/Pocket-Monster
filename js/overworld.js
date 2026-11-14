@@ -303,7 +303,7 @@ const Scripts = {
     S.flags[n.flag] = 1;
     if (n.warden) {
       const w = WARDENS[n.warden];
-      await say(S.name + ' received the ' + w.sigil + '!');
+      Msg.badge = n.warden - 1; await say(S.name + ' received the ' + w.sigil + '!'); Msg.badge = null;
       const c = sigilCount();
       await say(c >= 8 ? 'That is all eight sigils. The road to Crown Summit is open.' : 'Sigils held: ' + c + ' of 8. New roads will open, and Trade Posts may stock better goods.');
       saveGame();

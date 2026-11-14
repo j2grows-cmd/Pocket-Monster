@@ -41,6 +41,7 @@ const Scenery = {
 
   /* ---- battle backdrops: one per biome, plus an interior hall (-1) ---- */
   backdrop(bio) {
+    const art = Art.scene(bio); if (art) return art;
     if (this._bg[bio]) return this._bg[bio];
     const c = makeCanvas(240, 160), g = c.getContext('2d'), r = mulberry32(900 + bio * 31);
     const p = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
@@ -101,6 +102,7 @@ const Scenery = {
 
   /* ---- title landscape ---- */
   title() {
+    if (Art.img.title) return Art.img.title;
     if (this._title) return this._title;
     const c = makeCanvas(240, 160), g = c.getContext('2d'), r = mulberry32(4242);
     const p = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
