@@ -43,7 +43,7 @@ for S in (48, 32):
     sheet.save('%s/faces-%d.png' % (out, S), optimize=True)
 
 # --- sigils and items ---
-icons = cut('%s/icons.png' % src)
+icons = cut('%s/icons.png' % src, despill=4)
 strip(icons[:8], 64, 64, 62, 24, '%s/sigils-64.png' % out, 'mid')
 strip(icons[:8], 16, 16, 16, 16, '%s/sigils-16.png' % out, 'mid')
 strip(icons[8:], 32, 32, 31, 24, '%s/items-32.png' % out, 'mid')

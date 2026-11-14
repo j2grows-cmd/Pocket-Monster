@@ -1,6 +1,6 @@
 # Tamers of Vessara
 
-A monster-taming RPG that runs in the browser. 144 original monsters, an original region with eleven towns, eight wardens to beat and a crown to win. No build step, no dependencies, no image files: every sprite and tile is drawn by code.
+A monster-taming RPG that runs in the browser. 144 original monsters, an original region with eleven towns, eight wardens to beat and a crown to win. No build step and no dependencies. Monsters, battle scenes, portraits and icons are illustrated sheets in `assets/`; the overworld, tiles and interface are drawn by code, and so is a stand-in for any illustration that is missing.
 
 ![Title screen](docs/title.png)
 
@@ -51,6 +51,7 @@ The game saves to the browser's local storage. Use Save in the menu, or rest at 
 - **One design system.** A night, parchment and gold palette, a pixel display face for names and headings, and a rounded sans for anything you read in a sentence. Panels, bars, chips, icons and key hints are shared by every screen (`js/ui.js`).
 - **A living overworld.** Tile variants, soft path and shore edges, tall trees you can walk behind, shadows, swaying grass, moving water, pollen, fireflies, embers and snow by biome, and a day and night cycle with lit windows.
 - **Battles with weight.** Painted backdrops per biome, a damage trail on HP bars, hit flashes, floating damage numbers, effectiveness callouts, and a move menu that shows type, power, aim and how well each move will land.
+- **Illustrated art.** Every monster has its own sprite, each biome has a painted battle scene, and the wardens, councillors, Sage Maren, Corvin and the hero have full figures and portraits. Sigils and most items have illustrated icons.
 - **Dialogue with faces.** Name plates and portraits for whoever is speaking.
 - **Crisp at any size.** The 480 by 320 screen snaps to whole-number scales where it can, and the team screen switches to a single column on small displays.
 
@@ -91,7 +92,8 @@ js/data/monsters.js  the 144 monsters and their learnsets
 js/data/items.js     items and shop stock
 js/data/world.js     the region: cells, tamers, wardens, map generation, interiors
 js/ui.js             design system: palette, type, panels, bars, chips, icons
-js/sprites.js        procedural pixel art for monsters, people, tiles and scenery
+js/art.js            loads the illustrated sheets in assets/ and maps them to monsters, people and items
+js/sprites.js        sprite cache, plus procedural pixel art for the overworld and for anything without an illustration
 js/scenery.js        battle backdrops, title landscape, weather, daylight
 js/state.js          save data, monster instances, stats
 js/engine.js         canvas, game loop, input, dialogue box, menu primitives
@@ -100,9 +102,22 @@ js/overworld.js      walking, world rendering, NPC scripts, encounters, fishing
 js/battle.js         the battle system and its presentation
 js/main.js           boot
 tools/check.js       data and map checks
+tools/art/           cuts the source illustrations into the sheets in assets/ (Python, Pillow, SciPy)
+assets/              monster sprites at four sizes, battle scenes, title, people, faces, sigils, items
 ```
 
-To add a monster, add a row to `FAMILIES` in `js/data/monsters.js` and put it in an encounter list in `js/data/world.js`. Its sprite is assembled from the body, colour and feature codes in that row.
+To add a monster, add a row to `FAMILIES` in `js/data/monsters.js` and put it in an encounter list in `js/data/world.js`. Its stand-in sprite is assembled from the body, colour and feature codes in that row.
+
+### Art pipeline
+
+The illustrations were generated from the prompts in `docs/sprite-prompts.md` and `docs/art-prompts.md` as 4x4 sheets on a flat magenta background. The source sheets are large and are not kept in this repository. To rebuild `assets/` from a folder holding `sheet-1.png` to `sheet-9.png`, the seven `bg-*.png` scenes, `characters.png`, `title.png` and `icons.png`:
+
+```
+python3 tools/art/build_mons.py  <source folder> assets
+python3 tools/art/build_extra.py <source folder> assets
+```
+
+The cutter finds each figure as a connected shape, so sheets do not need to be exact grids, then removes the background, scales and reduces each sprite to a small palette. Monsters are indexed by Journal number, 12 to a row. Illustrated monsters have a front view only, so in battle your own monster is that view turned to face the foe.
 
 ### Checks
 
@@ -114,4 +129,4 @@ This confirms there are exactly 144 uniquely named monsters, every learnset and 
 
 ## Originality
 
-All names, creatures, art, places and text were made for this project. It is a fan-made tribute to the monster-taming genre and is not affiliated with or endorsed by Nintendo, Game Freak or The Pokémon Company.
+All names, creatures, places and text were made for this project. The illustrations were produced with an image generator from this project's own prompts. It is a fan-made tribute to the monster-taming genre and is not affiliated with or endorsed by Nintendo, Game Freak or The Pokémon Company.

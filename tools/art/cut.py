@@ -26,18 +26,18 @@ def key_mask(a):
     return m
 
 
-def cut(path, expect=16, min_area=1500, rows=4, cols=4, trim=1):
+def cut(path, expect=16, min_area=1500, rows=4, cols=4, trim=1, despill=0):
     # figures that stand close together merge at a wide join, so narrow it until the count is right
     err = None
     for join in (6, 5, 4, 3, 2, 1):
         try:
-            return _cut(path, expect, join, min_area, rows, cols, trim)
+            return _cut(path, expect, join, min_area, rows, cols, trim, despill)
         except ValueError as e:
             err = e
     raise SystemExit(str(err))
 
 
-def _cut(path, expect, join, min_area, rows, cols, trim):
+def _cut(path, expect, join, min_area, rows, cols, trim, despill):
     im = Image.open(path).convert('RGB')
     a = np.asarray(im)
     fg = ~key_mask(a)
@@ -80,7 +80,14 @@ def _cut(path, expect, join, min_area, rows, cols, trim):
         sl = (slice(c['y0'], c['y1']), slice(c['x0'], c['x1']))
         m = np.isin(lab[sl], c['ids']) & fg[sl]
         m = ndi.binary_erosion(m, iterations=trim) if trim else m      # shave the blended rim
-        out.append(Image.fromarray(np.dstack([a[sl], np.where(m, 255, 0)]).astype(np.uint8), 'RGBA'))
+        rgb = a[sl].astype(np.float64)
+        if despill:   # thin parts (cords, stems) soak up the background colour: pull the rim back toward neutral
+            rim = m & ~ndi.binary_erosion(m, iterations=despill)
+            g_ = rgb[..., 1]
+            for ch in (0, 2):
+                over = np.clip(rgb[..., ch] - g_ - 12, 0, None)
+                rgb[..., ch] = np.where(rim & (rgb[..., 0] > g_) & (rgb[..., 2] > g_), rgb[..., ch] - over * .75, rgb[..., ch])
+        out.append(Image.fromarray(np.dstack([rgb, np.where(m, 255, 0)]).astype(np.uint8), 'RGBA'))
     return out
 
 
